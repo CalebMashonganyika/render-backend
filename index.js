@@ -47,10 +47,13 @@ app.use(session({
   }
 }));
 
-// Rate limiting
+// Rate limiting with proxy support for Render
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  trustProxy: true // Trust proxy headers for accurate IP detection
 });
 app.use('/api/', limiter);
 
@@ -122,8 +125,22 @@ async function initializeDatabase() {
 }
 
 // Routes
-app.use('/api', require('./routes/api'));
-app.use('/admin', require('./routes/admin'));
+console.log('🔗 Loading API routes...');
+const apiRouter = require('./routes/api');
+app.use('/api', apiRouter);
+console.log('✅ API routes loaded');
+
+console.log('🔗 Loading admin routes...');
+const adminRouter = require('./routes/admin');
+app.use('/admin', adminRouter);
+console.log('✅ Admin routes loaded');
+
+// Debug route registration
+app._router.stack.forEach((layer) => {
+  if (layer.route) {
+    console.log(`🛣️ Registered route: ${Object.keys(layer.route.methods).join(', ').toUpperCase()} ${layer.route.path}`);
+  }
+});
 
 // Health check
 app.get('/health', (req, res) => {

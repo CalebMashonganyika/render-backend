@@ -292,4 +292,25 @@ router.get('/keys', requireAdminAuth, async (req, res) => {
   }
 });
 
+// GET /api/routes - List all available routes
+router.get('/routes', (req, res) => {
+  const routes = [];
+  
+  router.stack.forEach((layer) => {
+    if (layer.route) {
+      routes.push({
+        method: Object.keys(layer.route.methods).join(', ').toUpperCase(),
+        path: layer.route.path,
+        handler: layer.route.stack[0].handle.name || 'anonymous'
+      });
+    }
+  });
+  
+  res.json({
+    success: true,
+    routes: routes,
+    message: 'Available API routes'
+  });
+});
+
 module.exports = router;
