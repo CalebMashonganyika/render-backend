@@ -84,6 +84,18 @@ async function initializeDatabase() {
       CREATE INDEX IF NOT EXISTS idx_used ON unlock_keys(used);
     `);
 
+    // Add duration_minutes column to existing table
+    await client.query(`
+      DO $
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name = 'unlock_keys' AND column_name = 'duration_minutes') THEN
+          ALTER TABLE unlock_keys ADD COLUMN duration_minutes INTEGER DEFAULT 5;
+        END IF;
+      END
+      $;
+    `);
+
     // Create tokens table for session tokens
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_tokens (
