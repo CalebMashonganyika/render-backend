@@ -85,16 +85,16 @@ async function initializeDatabase() {
     `);
 
     // Add duration_minutes column to existing table
-    await client.query(`
-      DO $
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                       WHERE table_name = 'unlock_keys' AND column_name = 'duration_minutes') THEN
-          ALTER TABLE unlock_keys ADD COLUMN duration_minutes INTEGER DEFAULT 5;
-        END IF;
-      END
-      $;
-    `);
+    try {
+      await client.query('ALTER TABLE unlock_keys ADD COLUMN duration_minutes INTEGER DEFAULT 5');
+      console.log('✅ Added duration_minutes column to unlock_keys table');
+    } catch (error) {
+      if (error.code === '42701') {
+        console.log('✅ duration_minutes column already exists');
+      } else {
+        throw error;
+      }
+    }
 
     // Create tokens table for session tokens
     await client.query(`
