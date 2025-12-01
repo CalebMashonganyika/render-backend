@@ -147,7 +147,7 @@ async function startServer() {
       console.log(`🔑 Admin password configured: ${process.env.ADMIN_PASSWORD ? 'YES' : 'NO'}`);
       console.log(`🔐 Session secret configured: ${process.env.SESSION_SECRET ? 'YES (custom)' : 'NO (using ADMIN_PASSWORD)'}`);
       console.log(`🌐 CORS enabled with credentials: true`);
-      console.log(`📝 Admin dashboard serving: public/admin.html`);
+      console.log(`📝 Admin dashboard serving: public/admin-fixed.html`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
