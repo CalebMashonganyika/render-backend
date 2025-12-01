@@ -178,7 +178,7 @@ router.get('/keys', requireAdminAuth, async (req, res) => {
 
     try {
       const query = `
-        SELECT id, unlock_key, expires_at, used, redeemed_by, created_at
+        SELECT id, unlock_key, expires_at, used, redeemed_by, duration_minutes, created_at
         FROM unlock_keys
         ORDER BY created_at DESC
       `;

@@ -61,6 +61,7 @@ router.post('/login', async (req, res) => {
     console.log('🔐 Admin login attempt from:', req.ip);
     console.log('📝 Request body:', JSON.stringify(req.body));
     console.log('📝 Request headers:', JSON.stringify(req.headers));
+    console.log('🔑 Session before login:', JSON.stringify(req.session));
 
     const { password } = req.body;
 
@@ -93,12 +94,26 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Set session
+    // Set session - force save
     req.session.isAdmin = true;
     req.session.loginTime = new Date().toISOString();
+    
+    // Force session save
+    await new Promise((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) {
+          console.error('❌ Session save error:', err);
+          reject(err);
+        } else {
+          console.log('✅ Session saved successfully');
+          resolve();
+        }
+      });
+    });
 
     console.log('✅ Admin login successful - session set');
-    console.log('📋 Session data:', JSON.stringify(req.session));
+    console.log('📋 Session data after login:', JSON.stringify(req.session));
+    console.log('🔑 Session ID:', req.sessionID);
 
     res.json({
       success: true,

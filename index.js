@@ -40,9 +40,10 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: false, // Set to false for debugging
     httpOnly: true,
-    maxAge: 30 * 60 * 1000 // 30 minutes
+    maxAge: 30 * 60 * 1000, // 30 minutes
+    sameSite: 'lax' // Allow cookies to be sent
   }
 }));
 
@@ -71,6 +72,7 @@ async function initializeDatabase() {
         expires_at TIMESTAMP NOT NULL,
         used BOOLEAN DEFAULT FALSE,
         redeemed_by VARCHAR(255),
+        duration_minutes INTEGER DEFAULT 5,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -145,6 +147,7 @@ async function startServer() {
       console.log(`🔐 Session secret configured: ${process.env.SESSION_SECRET ? 'YES (custom)' : 'NO (using ADMIN_PASSWORD)'}`);
       console.log(`🌐 CORS enabled with credentials: true`);
       console.log(`🔒 CSP disabled for admin dashboard (inline scripts allowed)`);
+      console.log(`🍪 Session cookie settings: secure=false, sameSite=lax`);
       console.log(`📝 Admin dashboard serving: public/admin-fixed.html (via router)`);
     });
   } catch (error) {
