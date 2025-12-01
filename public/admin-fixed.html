@@ -210,6 +210,10 @@
     </div>
 
     <script>
+        console.log('🚀 Admin dashboard JavaScript loaded');
+        console.log('🌐 API Base:', window.location.origin);
+        console.log('📱 User Agent:', navigator.userAgent);
+        
         const API_BASE = window.location.origin;
 
         // DOM elements
@@ -233,6 +237,7 @@
         const testLoading = document.getElementById('test-loading');
 
         // Check if already logged in (session-based)
+        console.log('🎬 Starting admin dashboard initialization...');
         checkLoginStatus();
 
         // Login form submit
@@ -481,39 +486,67 @@
 
         // Check if user is logged in
         async function checkLoginStatus() {
+            console.log('🔍 Checking login status...');
             try {
                 // Try to access a protected endpoint
+                console.log('📡 Fetching /api/keys with credentials...');
                 const response = await fetch(`${API_BASE}/api/keys`, {
                     credentials: 'include'
                 });
 
+                console.log('📊 Response status:', response.status, response.statusText);
+                
                 if (response.ok) {
                     const result = await response.json();
+                    console.log('✅ API Keys response:', result);
                     if (result.success) {
+                        console.log('🎉 Already logged in - showing dashboard');
                         showDashboard();
                         loadKeys();
                         return;
+                    } else {
+                        console.log('⚠️ API returned success:false');
                     }
+                } else {
+                    console.log('❌ API request failed:', response.status);
                 }
             } catch (error) {
-                console.log('Not logged in:', error.message);
+                console.log('⚠️ Not logged in (expected on first visit):', error.message);
             }
 
+            console.log('🔑 Showing login form');
             showLogin();
         }
 
         // Show login form
         function showLogin() {
+            console.log('👤 Showing login form');
+            console.log('📱 Login section display before:', loginSection.style.display);
+            console.log('📊 Dashboard display before:', dashboard.style.display);
+            
             loginSection.style.display = 'block';
             dashboard.style.display = 'none';
+            
             document.getElementById('password').value = '';
             showMessage(loginMessage, '', '');
+            
+            console.log('✅ Login form displayed');
+            console.log('📱 Login section display after:', loginSection.style.display);
+            console.log('📊 Dashboard display after:', dashboard.style.display);
         }
 
         // Show dashboard
         function showDashboard() {
+            console.log('🎛️ Showing dashboard');
+            console.log('📱 Login section display before:', loginSection.style.display);
+            console.log('📊 Dashboard display before:', dashboard.style.display);
+            
             loginSection.style.display = 'none';
             dashboard.style.display = 'block';
+            
+            console.log('✅ Dashboard displayed');
+            console.log('📱 Login section display after:', loginSection.style.display);
+            console.log('📊 Dashboard display after:', dashboard.style.display);
         }
 
         // Show message
