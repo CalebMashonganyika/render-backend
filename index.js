@@ -18,7 +18,9 @@ const pool = new Pool({
 });
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable CSP for admin dashboard
+}));
 app.use(cors({
   origin: true,
   credentials: true
@@ -142,6 +144,7 @@ async function startServer() {
       console.log(`🔑 Admin password configured: ${process.env.ADMIN_PASSWORD ? 'YES' : 'NO'}`);
       console.log(`🔐 Session secret configured: ${process.env.SESSION_SECRET ? 'YES (custom)' : 'NO (using ADMIN_PASSWORD)'}`);
       console.log(`🌐 CORS enabled with credentials: true`);
+      console.log(`🔒 CSP disabled for admin dashboard (inline scripts allowed)`);
       console.log(`📝 Admin dashboard serving: public/admin-fixed.html (via router)`);
     });
   } catch (error) {
