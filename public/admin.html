@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unlock Key Admin Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .login-form {
+            max-width: 300px;
+            margin: 50px auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .btn:hover {
+            background: #0056b3;
+        }
+        .btn-danger {
+            background: #dc3545;
+        }
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        .btn-success {
+            background: #28a745;
+        }
+        .btn-success:hover {
+            background: #218838;
+        }
+        .dashboard {
+            display: none;
+        }
+        .key-item {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .key-info {
+            flex: 1;
+        }
+        .key-details {
+            flex: 2;
+            font-size: 0.9em;
+            color: #666;
+        }
+        .status {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-used {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .status-expired {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .message {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .actions {
+            display: flex;
+            gap: 5px;
+        }
+        .logout-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Login Form -->
+        <div id="login-section">
+            <h1>🔑 Unlock Key Admin</h1>
+            <form id="login-form" class="login-form">
+                <div class="form-group">
+                    <label for="password">Admin Password:</label>
+                    <input type="password" id="password" required>
+                </div>
+                <button type="submit" class="btn">Login</button>
+            </form>
+            <div id="login-message"></div>
+        </div>
+
+        <!-- Dashboard -->
+        <div id="dashboard" class="dashboard">
+            <button id="logout-btn" class="btn btn-danger logout-btn">Logout</button>
+            <h1>🔑 Unlock Key Dashboard</h1>
+
+            <div id="dashboard-message"></div>
+
+            <button id="generate-key-btn" class="btn btn-success">🎯 Generate New Key</button>
+
+            <h2>Generated Keys</h2>
+            <div id="keys-list">
+                <p>Loading keys...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let adminToken = localStorage.getItem('adminToken');
+
+        // DOM elements
+        const loginSection = document.getElementById('login-section');
+        const dashboard = document.getElementById('dashboard');
+        const loginForm = document.getElementById('login-form');
+        const generateKeyBtn = document.getElementById('generate-key-btn');
+        const keysList = document.getElementById('keys-list');
+        const loginMessage = document.getElementById('login-message');
+        const dashboardMessage = document.getElementById('dashboard-message');
+        const logoutBtn = document.getElementById('logout-btn');
+
+        // Check if already logged in
+        if (adminToken) {
+            showDashboard();
+            loadKeys();
+        }
+
+        // Login form submit
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ password }),
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    adminToken = result.token;
+                    localStorage.setItem('adminToken', adminToken);
+                    showDashboard();
+                    loadKeys();
+                } else {
+                    showMessage(loginMessage, result.message, 'error');
+                }
+            } catch (error) {
+                showMessage(loginMessage, 'Login failed: ' + error.message, 'error');
+            }
+        });
+
+        // Generate key button
+        generateKeyBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch(`${API_BASE}/admin/generate_key`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${adminToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showMessage(dashboardMessage, `Key generated: ${result.key.unlock_key}`, 'success');
+                    loadKeys();
+                } else {
+                    showMessage(dashboardMessage, result.message, 'error');
+                }
+            } catch (error) {
+                showMessage(dashboardMessage, 'Failed to generate key: ' + error.message, 'error');
+            }
+        });
+
+        // Logout button
+        logoutBtn.addEventListener('click', () => {
+            localStorage.removeItem('adminToken');
+            adminToken = null;
+            showLogin();
+        });
+
+        // Load and display keys
+        async function loadKeys() {
+            try {
+                const response = await fetch(`${API_BASE}/api/keys`, {
+                    headers: {
+                        'Authorization': `Bearer ${adminToken}`,
+                    },
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    displayKeys(result.keys);
+                } else {
+                    keysList.innerHTML = '<p>Error loading keys</p>';
+                }
+            } catch (error) {
+                keysList.innerHTML = '<p>Error loading keys: ' + error.message + '</p>';
+            }
+        }
+
+        // Display keys in the UI
+        function displayKeys(keys) {
+            if (keys.length === 0) {
+                keysList.innerHTML = '<p>No keys generated yet.</p>';
+                return;
+            }
+
+            keysList.innerHTML = '';
+
+            keys.forEach(key => {
+                const keyElement = createKeyElement(key);
+                keysList.appendChild(keyElement);
+            });
+        }
+
+        // Create key element for display
+        function createKeyElement(key) {
+            const div = document.createElement('div');
+            div.className = 'key-item';
+
+            const now = new Date();
+            const expiresAt = new Date(key.expires_at);
+            const isExpired = expiresAt < now;
+            const status = key.used ? 'used' : (isExpired ? 'expired' : 'active');
+
+            div.innerHTML = `
+                <div class="key-info">
+                    <strong>${key.unlock_key}</strong>
+                    <span class="status status-${status}">${status}</span>
+                </div>
+                <div class="key-details">
+                    Created: ${new Date(key.created_at).toLocaleString()}
+                    <br>Expires: ${expiresAt.toLocaleString()}
+                    ${key.redeemed_by ? `<br>Redeemed by: ${key.redeemed_by}` : ''}
+                </div>
+                <div class="actions">
+                    <button class="btn btn-danger" onclick="deleteKey(${key.id})">Delete</button>
+                    <button class="btn" onclick="toggleKey(${key.id})">${key.used ? 'Mark Unused' : 'Mark Used'}</button>
+                </div>
+            `;
+
+            return div;
+        }
+
+        // Delete key
+        async function deleteKey(id) {
+            if (!confirm('Are you sure you want to delete this key?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/keys/${id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${adminToken}`,
+                    },
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showMessage(dashboardMessage, 'Key deleted successfully', 'success');
+                    loadKeys();
+                } else {
+                    showMessage(dashboardMessage, result.message, 'error');
+                }
+            } catch (error) {
+                showMessage(dashboardMessage, 'Failed to delete key: ' + error.message, 'error');
+            }
+        }
+
+        // Toggle key used status
+        async function toggleKey(id) {
+            try {
+                const response = await fetch(`${API_BASE}/admin/keys/${id}/toggle`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${adminToken}`,
+                    },
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showMessage(dashboardMessage, result.message, 'success');
+                    loadKeys();
+                } else {
+                    showMessage(dashboardMessage, result.message, 'error');
+                }
+            } catch (error) {
+                showMessage(dashboardMessage, 'Failed to toggle key: ' + error.message, 'error');
+            }
+        }
+
+        // Show login form
+        function showLogin() {
+            loginSection.style.display = 'block';
+            dashboard.style.display = 'none';
+        }
+
+        // Show dashboard
+        function showDashboard() {
+            loginSection.style.display = 'none';
+            dashboard.style.display = 'block';
+        }
+
+        // Show message
+        function showMessage(element, message, type) {
+            element.textContent = message;
+            element.className = `message ${type}`;
+            setTimeout(() => {
+                element.textContent = '';
+                element.className = 'message';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

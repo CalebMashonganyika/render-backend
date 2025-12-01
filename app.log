@@ -1,0 +1,61 @@
+
+> unlock-key-backend@1.0.0 start
+> node index.js
+
+Attempting to connect to Neon database...
+❌ Database initialization error: AggregateError [ECONNREFUSED]: 
+    at c:\Users\HP\Desktop\Viar App\render-backend\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async initializeDatabase (c:\Users\HP\Desktop\Viar App\render-backend\index.js:55:20)
+    at async startServer (c:\Users\HP\Desktop\Viar App\render-backend\index.js:137:5) {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:5432
+        at createConnectionError (node:net:1678:14)
+        at afterConnectMultiple (node:net:1708:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:5432
+        at createConnectionError (node:net:1678:14)
+        at afterConnectMultiple (node:net:1708:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+❌ Failed to start server: AggregateError [ECONNREFUSED]: 
+    at c:\Users\HP\Desktop\Viar App\render-backend\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async initializeDatabase (c:\Users\HP\Desktop\Viar App\render-backend\index.js:55:20)
+    at async startServer (c:\Users\HP\Desktop\Viar App\render-backend\index.js:137:5) {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:5432
+        at createConnectionError (node:net:1678:14)
+        at afterConnectMultiple (node:net:1708:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:5432
+        at createConnectionError (node:net:1678:14)
+        at afterConnectMultiple (node:net:1708:16) {
+      errno: -4078,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+
+c:\Users\HP\Desktop\Viar App\render-backend>
