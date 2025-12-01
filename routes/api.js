@@ -15,10 +15,17 @@ const pool = new Pool({
 
 // Admin authentication middleware
 function requireAdminAuth(req, res, next) {
-  console.log('🔍 API Keys auth check - Session:', !!req.session, 'isAdmin:', req.session?.isAdmin);
+  console.log('🔍 API Keys auth check:');
+  console.log('  📋 Session exists:', !!req.session);
+  console.log('  🔑 Session ID:', req.sessionID);
+  console.log('  🎛️ Session data:', JSON.stringify(req.session));
+  console.log('  👤 isAdmin:', req.session?.isAdmin);
+  console.log('  🍪 Cookie header:', req.headers.cookie);
   
   if (!req.session || !req.session.isAdmin) {
     console.log('❌ API Keys auth failed - no valid admin session');
+    console.log('  ❌ Session check:', !!req.session);
+    console.log('  ❌ isAdmin check:', req.session?.isAdmin);
     return res.status(401).json({
       success: false,
       message: 'Admin authentication required'

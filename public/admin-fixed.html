@@ -192,6 +192,16 @@
 
             <div id="dashboard-message"></div>
 
+            <div style="margin: 20px 0;">
+                <label for="key-duration">Key Duration:</label>
+                <select id="key-duration" style="padding: 5px; margin: 0 10px;">
+                    <option value="5">5 Minutes</option>
+                    <option value="1440">1 Day</option>
+                    <option value="10080">1 Week</option>
+                    <option value="43200">1 Month</option>
+                </select>
+            </div>
+
             <button id="generate-key-btn" class="btn btn-success">
                 <span id="generate-text">🎯 Generate New Key</span>
                 <span id="generate-loading" class="loading" style="display: none;"></span>
@@ -293,21 +303,25 @@
             setLoading(generateKeyBtn, generateText, generateLoading, true);
 
             try {
-                console.log('🔑 Generating key...');
+                const durationSelect = document.getElementById('key-duration');
+                const duration = durationSelect.value;
+                console.log('🔑 Generating key for duration:', duration, 'minutes');
 
                 const response = await fetch(`${API_BASE}/admin/generate_key`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    credentials: 'include' // Important for sessions
+                    credentials: 'include', // Important for sessions
+                    body: JSON.stringify({ duration: parseInt(duration) })
                 });
 
                 const result = await response.json();
                 console.log('Generate key response:', result);
 
                 if (result.success) {
-                    showMessage(dashboardMessage, `✅ Key generated: ${result.key.unlock_key}`, 'success');
+                    const durationText = durationSelect.options[durationSelect.selectedIndex].text;
+                    showMessage(dashboardMessage, `✅ Key generated: ${result.key.unlock_key} (${durationText})`, 'success');
                     loadKeys();
                 } else {
                     showMessage(dashboardMessage, '❌ ' + (result.message || 'Failed to generate key'), 'error');

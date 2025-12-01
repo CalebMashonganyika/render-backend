@@ -20,7 +20,12 @@ const pool = new Pool({
 
 // Admin authentication middleware
 function requireAdminAuth(req, res, next) {
-  console.log('🔍 Auth check - Session:', !!req.session, 'isAdmin:', req.session?.isAdmin);
+  console.log('🔍 Admin auth check:');
+  console.log('  📋 Session exists:', !!req.session);
+  console.log('  🔑 Session ID:', req.sessionID);
+  console.log('  🎛️ Session data:', JSON.stringify(req.session));
+  console.log('  👤 isAdmin:', req.session?.isAdmin);
+  console.log('  🍪 Cookie header:', req.headers.cookie);
   
   // Check session auth
   if (req.session && req.session.isAdmin) {
@@ -41,6 +46,9 @@ function requireAdminAuth(req, res, next) {
   }
 
   console.log('❌ Admin authentication failed - no valid session or token');
+  console.log('  ❌ Session check:', !!req.session);
+  console.log('  ❌ isAdmin check:', req.session?.isAdmin);
+  console.log('  ❌ Authorization header:', req.headers.authorization);
   return res.status(401).json({
     success: false,
     message: 'Admin authentication required'
@@ -153,7 +161,18 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
   let client;
 
   try {
-    console.log('🔑 Generating new unlock key');
+    const { duration } = req.body;
+    console.log('🔑 Generating new unlock key, duration:', duration, 'minutes');
+    
+    // Default to 5 minutes if not specified
+    const durationMinutes = duration ? parseInt(duration) : 5;
+    if (isNaN(durationMinutes) || durationMinutes <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid duration'
+      });
+    }
+
     client = await pool.connect();
 
     // Generate unique key
@@ -180,23 +199,23 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
       });
     }
 
-    // Set expiry to 5 minutes from now
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    // Set expiry based on duration
+    const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000);
 
     // Insert new key
     const insertQuery = `
-      INSERT INTO unlock_keys (unlock_key, expires_at, used)
-      VALUES ($1, $2, false)
-      RETURNING id, unlock_key, expires_at, created_at
+      INSERT INTO unlock_keys (unlock_key, expires_at, used, duration_minutes)
+      VALUES ($1, $2, false, $3)
+      RETURNING id, unlock_key, expires_at, duration_minutes, created_at
     `;
-    const result = await client.query(insertQuery, [key, expiresAt]);
+    const result = await client.query(insertQuery, [key, expiresAt, durationMinutes]);
 
-    console.log('✅ Key generated successfully:', key);
+    console.log('✅ Key generated successfully:', key, 'for', durationMinutes, 'minutes');
 
     res.json({
       success: true,
       key: result.rows[0],
-      message: 'Key generated successfully'
+      message: `Key generated successfully (${durationMinutes} minutes)`
     });
 
   } catch (error) {
