@@ -44,6 +44,8 @@ function requireAdminAuth(req, res, next) {
 router.post('/login', async (req, res) => {
   try {
     console.log('🔐 Admin login attempt from:', req.ip);
+    console.log('📝 Request body:', JSON.stringify(req.body));
+    console.log('📝 Request headers:', JSON.stringify(req.headers));
 
     const { password } = req.body;
 
@@ -55,15 +57,17 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Check password against environment variable
-    const adminPassword = process.env.ADMIN_PASSWORD;
+    // Check password against environment variable with fallback
+    let adminPassword = process.env.ADMIN_PASSWORD;
     if (!adminPassword) {
-      console.error('❌ Admin password not configured in environment');
-      return res.status(500).json({
-        success: false,
-        message: 'Server configuration error'
-      });
+      console.log('⚠️ ADMIN_PASSWORD not set in environment, using default: admin123');
+      adminPassword = 'admin123';
+    } else {
+      console.log('✅ ADMIN_PASSWORD found in environment');
     }
+
+    console.log('🔑 Received password:', password);
+    console.log('🔑 Expected password:', adminPassword);
 
     // Simple password check
     if (password !== adminPassword) {
@@ -78,12 +82,12 @@ router.post('/login', async (req, res) => {
     req.session.isAdmin = true;
     req.session.loginTime = new Date().toISOString();
 
-    console.log('✅ Admin login successful');
+    console.log('✅ Admin login successful - session set');
+    console.log('📋 Session data:', JSON.stringify(req.session));
 
     res.json({
       success: true,
       message: 'Login successful',
-      token: adminPassword, // Return the admin password as token for Bearer auth
       redirect: '/admin'
     });
 
@@ -91,7 +95,7 @@ router.post('/login', async (req, res) => {
     console.error('❌ Admin login error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error: ' + error.message
     });
   }
 });
@@ -112,6 +116,28 @@ router.post('/logout', (req, res) => {
       success: true,
       message: 'Logged out successfully'
     });
+  });
+});
+
+// GET /admin/test - Simple test endpoint to verify communication
+router.get('/test', (req, res) => {
+  console.log('🧪 Test endpoint hit');
+  console.log('📋 Session:', !!req.session);
+  console.log('📋 Headers:', JSON.stringify(req.headers));
+  
+  res.json({
+    success: true,
+    message: 'Communication working!',
+    timestamp: new Date().toISOString(),
+    session: {
+      id: req.sessionID,
+      isAdmin: req.session?.isAdmin || false
+    },
+    headers: {
+      'content-type': req.headers['content-type'],
+      'origin': req.headers.origin,
+      'user-agent': req.headers['user-agent']
+    }
   });
 });
 

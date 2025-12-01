@@ -77,6 +77,12 @@
         .btn-success:hover {
             background: #218838;
         }
+        .btn-info {
+            background: #17a2b8;
+        }
+        .btn-info:hover {
+            background: #138496;
+        }
         .dashboard {
             display: none;
         }
@@ -191,6 +197,11 @@
                 <span id="generate-loading" class="loading" style="display: none;"></span>
             </button>
 
+            <button id="test-btn" class="btn btn-info">
+                <span id="test-text">🧪 Test Connection</span>
+                <span id="test-loading" class="loading" style="display: none;"></span>
+            </button>
+
             <h2>Generated Keys</h2>
             <div id="keys-list">
                 <p>Loading keys...</p>
@@ -217,6 +228,9 @@
         const loginLoading = document.getElementById('login-loading');
         const generateText = document.getElementById('generate-text');
         const generateLoading = document.getElementById('generate-loading');
+        const testBtn = document.getElementById('test-btn');
+        const testText = document.getElementById('test-text');
+        const testLoading = document.getElementById('test-loading');
 
         // Check if already logged in (session-based)
         checkLoginStatus();
@@ -298,6 +312,33 @@
                 showMessage(dashboardMessage, 'Connection error: ' + error.message, 'error');
             } finally {
                 setLoading(generateKeyBtn, generateText, generateLoading, false);
+            }
+        });
+
+        // Test connection button
+        testBtn.addEventListener('click', async () => {
+            setLoading(testBtn, testText, testLoading, true);
+
+            try {
+                console.log('🧪 Testing connection...');
+
+                const response = await fetch(`${API_BASE}/admin/test`, {
+                    credentials: 'include'
+                });
+
+                const result = await response.json();
+                console.log('Test response:', result);
+
+                if (result.success) {
+                    showMessage(dashboardMessage, `✅ ${result.message} - Session: ${result.session.isAdmin ? 'Admin' : 'Guest'}`, 'info');
+                } else {
+                    showMessage(dashboardMessage, '❌ Test failed: ' + (result.message || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                console.error('❌ Test connection error:', error);
+                showMessage(dashboardMessage, 'Connection error: ' + error.message, 'error');
+            } finally {
+                setLoading(testBtn, testText, testLoading, false);
             }
         });
 
