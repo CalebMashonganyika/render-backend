@@ -52,29 +52,97 @@ function generateSecureToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+// GET /api/test - Simple database connection test
+router.get('/test', async (req, res) => {
+  console.log('🧪 DATABASE_CONNECTION_TEST');
+  
+  try {
+    console.log('🔗 Attempting database connection...');
+    const client = await pool.connect();
+    
+    try {
+      console.log('✅ Database connected successfully');
+      
+      // Test query
+      const result = await client.query('SELECT NOW() as current_time, version() as db_version');
+      console.log('📊 Test query result:', result.rows[0]);
+      
+      // Check if unlock_keys table exists
+      const tableCheck = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_name = 'unlock_keys'
+        ) as table_exists
+      `);
+      
+      console.log('🔑 unlock_keys table exists:', tableCheck.rows[0].table_exists);
+      
+      res.json({
+        success: true,
+        message: 'Database connection successful',
+        data: {
+          current_time: result.rows[0].current_time,
+          db_version: result.rows[0].db_version,
+          table_exists: tableCheck.rows[0].table_exists
+        }
+      });
+      
+    } finally {
+      client.release();
+      console.log('🔗 Database client released');
+    }
+    
+  } catch (error) {
+    console.error('❌ Database connection failed:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Database connection failed',
+      error: error.message,
+      hint: 'Check DATABASE_URL environment variable'
+    });
+  }
+});
+
 // POST /api/verify_key
 router.post('/verify_key', async (req, res) => {
+  console.log('🔑 VERIFY_KEY_REQUEST:', {
+    method: req.method,
+    url: req.url,
+    body: req.body,
+    timestamp: new Date().toISOString()
+  });
+
   try {
     const { user_id, unlock_key } = req.body;
 
+    console.log('🔑 REQUEST_DATA:', { user_id, unlock_key });
+
     if (!user_id || !unlock_key) {
+      console.log('❌ MISSING_PARAMETERS:', { user_id: !!user_id, unlock_key: !!unlock_key });
       return res.status(400).json({
         success: false,
         message: 'user_id and unlock_key are required'
       });
     }
 
+    console.log('🔗 CONNECTING_TO_DATABASE...');
     const client = await pool.connect();
 
     try {
+      console.log('✅ DATABASE_CONNECTED');
+
       // Check if key exists, is not used, and not expired
       const query = `
         SELECT id FROM unlock_keys
         WHERE unlock_key = $1 AND used = false AND expires_at > NOW()
       `;
+      console.log('🔍 QUERYING_KEY:', query, [unlock_key]);
+      
       const result = await client.query(query, [unlock_key]);
+      console.log('📊 QUERY_RESULT:', result.rows);
 
       if (result.rows.length === 0) {
+        console.log('❌ KEY_NOT_FOUND_OR_USED_OR_EXPIRED');
         return res.status(400).json({
           success: false,
           message: 'Invalid or expired unlock key'
@@ -82,40 +150,62 @@ router.post('/verify_key', async (req, res) => {
       }
 
       const keyId = result.rows[0].id;
+      console.log('🔑 KEY_ID_FOUND:', keyId);
 
       // Mark key as used and save redeemed_by
+      console.log('🔄 MARKING_KEY_AS_USED...');
       await client.query(
         'UPDATE unlock_keys SET used = true, redeemed_by = $1 WHERE id = $2',
         [user_id, keyId]
       );
+      console.log('✅ KEY_MARKED_AS_USED');
 
       // Generate a secure token for the user
       const token = generateSecureToken();
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
+      console.log('🎫 GENERATED_TOKEN:', token.substring(0, 8) + '...');
+      console.log('⏰ EXPIRES_AT:', expiresAt.toISOString());
+
       // Store token in database
+      console.log('💾 STORING_TOKEN_IN_DATABASE...');
       await client.query(
         'INSERT INTO user_tokens (token, user_id, expires_at) VALUES ($1, $2, $3)',
         [token, user_id, expiresAt]
       );
+      console.log('✅ TOKEN_STORED_SUCCESSFULLY');
 
-      res.json({
+      const response = {
         success: true,
         token: token,
         message: 'Premium features unlocked!',
         premium_until: expiresAt.toISOString(),
         duration_minutes: 5
-      });
+      };
 
+      console.log('🎉 SUCCESS_RESPONSE:', response);
+      res.json(response);
+
+    } catch (dbError) {
+      console.error('❌ DATABASE_ERROR:', dbError);
+      console.error('❌ DATABASE_ERROR_STACK:', dbError.stack);
+      throw dbError;
     } finally {
       client.release();
+      console.log('🔗 DATABASE_CLIENT_RELEASED');
     }
 
   } catch (error) {
-    console.error('Error verifying key:', error);
+    console.error('💥 VERIFY_KEY_ERROR:', error);
+    console.error('💥 ERROR_STACK:', error.stack);
+    console.error('💥 ERROR_TYPE:', error.constructor.name);
+    
+    // More detailed error response for debugging
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      timestamp: new Date().toISOString()
     });
   }
 });
