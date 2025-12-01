@@ -1,9 +1,16 @@
 const express = require('express');
+const path = require('path');
 const crypto = require('crypto');
 const pkg = require('pg');
 const { Pool } = pkg;
 
 const router = express.Router();
+
+// GET /admin - serve the admin dashboard HTML
+router.get('/', (req, res) => {
+  console.log('📄 Router serving admin dashboard HTML');
+  res.sendFile(path.join(__dirname, '../public', 'admin-fixed.html'));
+});
 
 // Database connection (Neon)
 const pool = new Pool({

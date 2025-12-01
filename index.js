@@ -109,11 +109,6 @@ async function initializeDatabase() {
 app.use('/api', require('./routes/api'));
 app.use('/admin', require('./routes/admin'));
 
-// Admin dashboard route
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin-fixed.html'));
-});
-
 // Health check
 app.get('/health', (req, res) => {
   res.json({
@@ -147,7 +142,7 @@ async function startServer() {
       console.log(`🔑 Admin password configured: ${process.env.ADMIN_PASSWORD ? 'YES' : 'NO'}`);
       console.log(`🔐 Session secret configured: ${process.env.SESSION_SECRET ? 'YES (custom)' : 'NO (using ADMIN_PASSWORD)'}`);
       console.log(`🌐 CORS enabled with credentials: true`);
-      console.log(`📝 Admin dashboard serving: public/admin-fixed.html`);
+      console.log(`📝 Admin dashboard serving: public/admin-fixed.html (via router)`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
