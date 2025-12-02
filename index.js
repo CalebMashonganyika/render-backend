@@ -11,6 +11,9 @@ const { Pool } = pkg;
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// Trust proxy headers for accurate IP detection (required for Render.com)
+app.set('trust proxy', true);
+
 // Database connection (Neon.tech)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
