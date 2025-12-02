@@ -109,13 +109,22 @@ router.get('/test', async (req, res) => {
       
       console.log('🔑 unlock_keys table exists:', tableCheck.rows[0].table_exists);
       
+      // Check table columns
+      const columnsCheck = await client.query(`
+        SELECT column_name, data_type 
+        FROM information_schema.columns 
+        WHERE table_name = 'unlock_keys'
+        ORDER BY ordinal_position
+      `);
+      
       res.json({
         success: true,
         message: 'Database connection successful',
         data: {
           current_time: result.rows[0].current_time,
           db_version: result.rows[0].db_version,
-          table_exists: tableCheck.rows[0].table_exists
+          table_exists: tableCheck.rows[0].table_exists,
+          columns: columnsCheck.rows
         }
       });
       
@@ -131,6 +140,65 @@ router.get('/test', async (req, res) => {
       message: 'Database connection failed',
       error: error.message,
       hint: 'Check DATABASE_URL environment variable'
+    });
+  }
+});
+
+// POST /api/test_verify - Test key verification endpoint
+router.post('/test_verify', async (req, res) => {
+  console.log('🧪 TEST_VERIFY_KEY_REQUEST');
+  
+  try {
+    const { user_id, unlock_key } = req.body;
+    
+    console.log('🧪 TEST_DATA:', { user_id, unlock_key });
+    
+    if (!user_id || !unlock_key) {
+      return res.status(400).json({
+        success: false,
+        error: 'user_id and unlock_key are required'
+      });
+    }
+    
+    // Test key format validation
+    const isValidFormat = validateKeyFormat(unlock_key);
+    console.log('🧪 FORMAT_VALID:', isValidFormat);
+    
+    if (!isValidFormat) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid key format. Expected format: vsm-XXXXXXX-5min/1day/1month'
+      });
+    }
+    
+    // Extract duration
+    const durationType = extractDurationFromKey(unlock_key);
+    console.log('🧪 DURATION_TYPE:', durationType);
+    
+    const durationInfo = getDurationInfo(durationType);
+    console.log('🧪 DURATION_INFO:', durationInfo);
+    
+    const expiresAt = calculateExpiry(durationType);
+    console.log('🧪 EXPIRES_AT:', expiresAt.toISOString());
+    
+    res.json({
+      success: true,
+      message: 'Test verification successful',
+      data: {
+        key_format_valid: isValidFormat,
+        extracted_duration: durationType,
+        duration_info: durationInfo,
+        calculated_expiry: expiresAt.toISOString(),
+        duration_minutes: Math.floor(durationInfo.duration / (60 * 1000))
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Test verify error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Test verification failed',
+      details: error.message
     });
   }
 });
@@ -184,7 +252,7 @@ router.post('/verify_key', async (req, res) => {
 
       // Check if key exists, is not used, and not expired
       const query = `
-        SELECT id, unlock_key, expires_at, used FROM unlock_keys
+        SELECT id, unlock_key, expires_at, used, duration_minutes, duration_type FROM unlock_keys
         WHERE unlock_key = $1
       `;
       console.log('🔍 QUERYING_KEY:', query, [unlock_key]);
@@ -272,6 +340,30 @@ router.post('/verify_key', async (req, res) => {
     } catch (dbError) {
       console.error('❌ DATABASE_ERROR:', dbError);
       console.error('❌ DATABASE_ERROR_STACK:', dbError.stack);
+      console.error('❌ DATABASE_ERROR_CODE:', dbError.code);
+      console.error('❌ DATABASE_ERROR_DETAIL:', dbError.detail);
+      
+      // Handle specific database errors
+      if (dbError.code === '42703') { // undefined column
+        return res.status(500).json({
+          success: false,
+          error: 'Database schema error: Missing column',
+          details: dbError.message,
+          timestamp: new Date().toISOString(),
+          hint: 'Please run the database migration script to add missing columns'
+        });
+      }
+      
+      if (dbError.code === '42P01') { // undefined table
+        return res.status(500).json({
+          success: false,
+          error: 'Database schema error: Table does not exist',
+          details: dbError.message,
+          timestamp: new Date().toISOString(),
+          hint: 'Please create the unlock_keys table'
+        });
+      }
+      
       throw dbError;
     } finally {
       client.release();
@@ -287,6 +379,7 @@ router.post('/verify_key', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Internal server error',
+      details: error.message,
       timestamp: new Date().toISOString()
     });
   }
