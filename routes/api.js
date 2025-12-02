@@ -39,22 +39,33 @@ function requireAdminAuth(req, res, next) {
 // Key duration configurations (in milliseconds)
 const KEY_DURATIONS = {
   '5min': { label: '5 Minutes', duration: 5 * 60 * 1000 },
-  '30min': { label: '30 Minutes', duration: 30 * 60 * 1000 },
-  '1hour': { label: '1 Hour', duration: 60 * 60 * 1000 },
   '1day': { label: '1 Day', duration: 24 * 60 * 60 * 1000 },
-  '7days': { label: '7 Days', duration: 7 * 24 * 60 * 60 * 1000 },
-  '30days': { label: '30 Days', duration: 30 * 24 * 60 * 60 * 1000 }
+  '1month': { label: '1 Month', duration: 30 * 24 * 60 * 60 * 1000 }
 };
 
-// Generate random unlock key in format XXXX-XXXX-XXXX
-function generateUnlockKey() {
+// Generate random unlock key in new format: vsm-XXXXXXX-duration
+function generateUnlockKey(durationType = '5min') {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let key = '';
-  for (let i = 0; i < 12; i++) {
-    if (i > 0 && i % 4 === 0) key += '-';
-    key += chars.charAt(Math.floor(Math.random() * chars.length));
+  let randomPart = '';
+  for (let i = 0; i < 7; i++) {
+    randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return key;
+  return `vsm-${randomPart}-${durationType}`;
+}
+
+// Validate new key format: vsm-XXXXXXX-5min/1day/1month
+function validateKeyFormat(key) {
+  const regex = /^vsm-[A-Z0-9]{7}-(5min|1day|1month)$/;
+  return regex.test(key);
+}
+
+// Extract duration from key format
+function extractDurationFromKey(key) {
+  const parts = key.split('-');
+  if (parts.length !== 3) return null;
+  
+  const durationType = parts[2];
+  return KEY_DURATIONS[durationType] ? durationType : null;
 }
 
 // Calculate expiry timestamp based on duration type
@@ -142,7 +153,26 @@ router.post('/verify_key', async (req, res) => {
       console.log('❌ MISSING_PARAMETERS:', { user_id: !!user_id, unlock_key: !!unlock_key });
       return res.status(400).json({
         success: false,
-        message: 'user_id and unlock_key are required'
+        error: 'user_id and unlock_key are required'
+      });
+    }
+
+    // Validate new key format: vsm-XXXXXXX-5min/1day/1month
+    if (!validateKeyFormat(unlock_key)) {
+      console.log('❌ INVALID_KEY_FORMAT:', unlock_key);
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid key format. Expected format: vsm-XXXXXXX-5min/1day/1month'
+      });
+    }
+
+    // Extract duration from key format
+    const durationType = extractDurationFromKey(unlock_key);
+    if (!durationType) {
+      console.log('❌ INVALID_DURATION_FROM_KEY:', unlock_key);
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid duration type in key'
       });
     }
 
@@ -154,33 +184,58 @@ router.post('/verify_key', async (req, res) => {
 
       // Check if key exists, is not used, and not expired
       const query = `
-        SELECT id, duration_type FROM unlock_keys
-        WHERE unlock_key = $1 AND used = false AND expires_at > NOW()
+        SELECT id, unlock_key, expires_at, used FROM unlock_keys
+        WHERE unlock_key = $1
       `;
       console.log('🔍 QUERYING_KEY:', query, [unlock_key]);
       
       const result = await client.query(query, [unlock_key]);
       console.log('📊 QUERY_RESULT:', result.rows);
 
+      // If key doesn't exist, create it automatically with the encoded duration
+      let keyId;
       if (result.rows.length === 0) {
-        console.log('❌ KEY_NOT_FOUND_OR_USED_OR_EXPIRED');
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid or expired unlock key'
-        });
+        console.log('🔑 KEY_NOT_FOUND_CREATING_NEW...');
+        const durationInfo = getDurationInfo(durationType);
+        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
+        
+        const insertResult = await client.query(
+          'INSERT INTO unlock_keys (unlock_key, expires_at, used, duration_minutes, duration_type, created_at) VALUES ($1, $2, false, $3, $4, NOW()) RETURNING id',
+          [unlock_key, expiresAt, Math.floor(durationInfo.duration / (60 * 1000)), durationType]
+        );
+        keyId = insertResult.rows[0].id;
+        console.log('✅ NEW_KEY_CREATED_WITH_ID:', keyId);
+      } else {
+        const keyData = result.rows[0];
+        keyId = keyData.id;
+        
+        // Check if key is already used
+        if (keyData.used) {
+          console.log('❌ KEY_ALREADY_USED');
+          return res.status(400).json({
+            success: false,
+            error: 'Key has already been used'
+          });
+        }
+        
+        // Check if key is expired
+        const now = new Date();
+        const expiresAt = new Date(keyData.expires_at);
+        if (now > expiresAt) {
+          console.log('❌ KEY_EXPIRED');
+          return res.status(400).json({
+            success: false,
+            error: 'Key has expired'
+          });
+        }
       }
 
-      const keyData = result.rows[0];
-      const keyId = keyData.id;
-      const durationType = keyData.duration_type || '5min';
-      
       console.log('🔑 KEY_ID_FOUND:', keyId);
-      console.log('⏱️ DURATION_TYPE:', durationType);
 
       // Mark key as used and save redeemed_by
       console.log('🔄 MARKING_KEY_AS_USED...');
       await client.query(
-        'UPDATE unlock_keys SET used = true, redeemed_by = $1 WHERE id = $2',
+        'UPDATE unlock_keys SET used = true, redeemed_by = $1, redeemed_at = NOW() WHERE id = $2',
         [user_id, keyId]
       );
       console.log('✅ KEY_MARKED_AS_USED');
@@ -204,11 +259,10 @@ router.post('/verify_key', async (req, res) => {
 
       const response = {
         success: true,
+        message: 'Premium features unlocked!',
         token: token,
-        message: `Premium features unlocked for ${durationInfo.label}!`,
         premium_until: expiresAt.toISOString(),
         duration_type: durationType,
-        duration_label: durationInfo.label,
         duration_minutes: Math.floor(durationInfo.duration / (60 * 1000))
       };
 
@@ -232,8 +286,7 @@ router.post('/verify_key', async (req, res) => {
     // More detailed error response for debugging
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      error: 'Internal server error',
       timestamp: new Date().toISOString()
     });
   }

@@ -9,6 +9,7 @@ const router = express.Router();
 // GET /admin - serve the admin dashboard HTML
 router.get('/', (req, res) => {
   console.log('📄 Router serving admin dashboard HTML');
+  // Serve the fixed version with duration selection
   res.sendFile(path.join(__dirname, '../public', 'admin-fixed.html'));
 });
 
@@ -176,27 +177,26 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
   let client;
 
   try {
-    const { duration } = req.body;
-    console.log('🔑 Generating new unlock key, duration:', duration, 'minutes');
+    const { duration_type = '5min' } = req.body;
+    console.log('🔑 Generating new unlock key with duration:', duration_type);
     
-    // Default to 5 minutes if not specified
-    const durationMinutes = duration ? parseInt(duration) : 5;
-    if (isNaN(durationMinutes) || durationMinutes <= 0) {
+    // Validate duration type
+    if (!KEY_DURATIONS[duration_type]) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid duration'
+        message: 'Invalid duration type. Must be one of: 5min, 1day, 1month'
       });
     }
 
     client = await pool.connect();
 
-    // Generate unique key
+    // Generate unique key with the new format
     let key;
     let attempts = 0;
     const maxAttempts = 10;
 
     do {
-      key = generateUnlockKey();
+      key = generateUnlockKey(duration_type);
       attempts++;
 
       // Check if key already exists
@@ -214,23 +214,37 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
       });
     }
 
-    // Set expiry based on duration
-    const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000);
+    // Set expiry based on duration type
+    const durationInfo = KEY_DURATIONS[duration_type];
+    const expiresAt = new Date(Date.now() + durationInfo.duration);
 
-    // Insert new key
+    // Insert new key with duration_type
     const insertQuery = `
-      INSERT INTO unlock_keys (unlock_key, expires_at, used, duration_minutes)
-      VALUES ($1, $2, false, $3)
-      RETURNING id, unlock_key, expires_at, duration_minutes, created_at
+      INSERT INTO unlock_keys (unlock_key, expires_at, used, duration_type, duration_minutes, created_at)
+      VALUES ($1, $2, false, $3, $4, NOW())
+      RETURNING id, unlock_key, expires_at, duration_type, duration_minutes, created_at
     `;
-    const result = await client.query(insertQuery, [key, expiresAt, durationMinutes]);
+    const result = await client.query(insertQuery, [
+      key, 
+      expiresAt, 
+      duration_type,
+      Math.floor(durationInfo.duration / (60 * 1000))
+    ]);
 
-    console.log('✅ Key generated successfully:', key, 'for', durationMinutes, 'minutes');
+    console.log('✅ Key generated successfully:', key, 'for', durationInfo.label);
 
     res.json({
       success: true,
-      key: result.rows[0],
-      message: `Key generated successfully (${durationMinutes} minutes)`
+      key: {
+        id: result.rows[0].id,
+        unlock_key: result.rows[0].unlock_key,
+        duration_type: result.rows[0].duration_type,
+        duration_label: durationInfo.label,
+        expires_at: result.rows[0].expires_at,
+        created_at: result.rows[0].created_at,
+        used: false
+      },
+      message: `Key generated successfully for ${durationInfo.label}`
     });
 
   } catch (error) {
@@ -344,15 +358,21 @@ router.put('/keys/:id/toggle', requireAdminAuth, async (req, res) => {
   }
 });
 
-// Generate random unlock key in format XXXX-XXXX
-function generateUnlockKey() {
+// Key duration configurations (in milliseconds)
+const KEY_DURATIONS = {
+  '5min': { label: '5 Minutes', duration: 5 * 60 * 1000 },
+  '1day': { label: '1 Day', duration: 24 * 60 * 60 * 1000 },
+  '1month': { label: '1 Month', duration: 30 * 24 * 60 * 60 * 1000 }
+};
+
+// Generate random unlock key in new format: vsm-XXXXXXX-duration
+function generateUnlockKey(durationType = '5min') {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let key = '';
-  for (let i = 0; i < 8; i++) {
-    if (i > 0 && i % 4 === 0) key += '-';
-    key += chars.charAt(Math.floor(Math.random() * chars.length));
+  let randomPart = '';
+  for (let i = 0; i < 7; i++) {
+    randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return key;
+  return `vsm-${randomPart}-${durationType}`;
 }
 
 module.exports = router;

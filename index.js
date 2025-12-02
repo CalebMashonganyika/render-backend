@@ -76,6 +76,7 @@ async function initializeDatabase() {
         used BOOLEAN DEFAULT FALSE,
         redeemed_by VARCHAR(255),
         duration_minutes INTEGER DEFAULT 5,
+        duration_type VARCHAR(20) DEFAULT '5min',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -99,6 +100,30 @@ async function initializeDatabase() {
       }
     }
 
+    // Add duration_type column to unlock_keys table
+    try {
+      await client.query('ALTER TABLE unlock_keys ADD COLUMN duration_type VARCHAR(20) DEFAULT \'5min\'');
+      console.log('✅ Added duration_type column to unlock_keys table');
+    } catch (error) {
+      if (error.code === '42701') {
+        console.log('✅ duration_type column already exists');
+      } else {
+        throw error;
+      }
+    }
+
+    // Add duration_type column to user_tokens table
+    try {
+      await client.query('ALTER TABLE user_tokens ADD COLUMN duration_type VARCHAR(20) DEFAULT \'5min\'');
+      console.log('✅ Added duration_type column to user_tokens table');
+    } catch (error) {
+      if (error.code === '42701') {
+        console.log('✅ duration_type column already exists in user_tokens table');
+      } else {
+        throw error;
+      }
+    }
+
     // Create tokens table for session tokens
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_tokens (
@@ -106,6 +131,7 @@ async function initializeDatabase() {
         token VARCHAR(255) UNIQUE NOT NULL,
         user_id VARCHAR(255) NOT NULL,
         expires_at TIMESTAMP NOT NULL,
+        duration_type VARCHAR(20) DEFAULT '5min',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);

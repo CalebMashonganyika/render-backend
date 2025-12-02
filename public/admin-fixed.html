@@ -195,10 +195,9 @@
             <div style="margin: 20px 0;">
                 <label for="key-duration">Key Duration:</label>
                 <select id="key-duration" style="padding: 5px; margin: 0 10px;">
-                    <option value="5">5 Minutes</option>
-                    <option value="1440">1 Day</option>
-                    <option value="10080">1 Week</option>
-                    <option value="43200">1 Month</option>
+                    <option value="5min">5 Minutes</option>
+                    <option value="1day">1 Day</option>
+                    <option value="1month">1 Month</option>
                 </select>
             </div>
 
@@ -313,7 +312,7 @@
                         'Content-Type': 'application/json',
                     },
                     credentials: 'include', // Important for sessions
-                    body: JSON.stringify({ duration: parseInt(duration) })
+                    body: JSON.stringify({ duration_type: duration })
                 });
 
                 const result = await response.json();
@@ -321,7 +320,7 @@
 
                 if (result.success) {
                     const durationText = durationSelect.options[durationSelect.selectedIndex].text;
-                    showMessage(dashboardMessage, `✅ Key generated: ${result.key.unlock_key} (${durationText})`, 'success');
+                    showMessage(dashboardMessage, `✅ Key generated: ${result.key.unlock_key} (${result.key.duration_label || durationText})`, 'success');
                     loadKeys();
                 } else {
                     showMessage(dashboardMessage, '❌ ' + (result.message || 'Failed to generate key'), 'error');
@@ -435,7 +434,8 @@
                 <div class="key-details">
                     Created: ${new Date(key.created_at).toLocaleString()}
                     <br>Expires: ${expiresAt.toLocaleString()}
-                    <br>Duration: ${key.duration_minutes || 5} minutes
+                    <br>Duration: ${key.duration_type || '5min'}
+                    ${key.duration_label ? `<br>Label: ${key.duration_label}` : ''}
                     ${key.redeemed_by ? `<br>Redeemed by: ${key.redeemed_by}` : ''}
                 </div>
                 <div class="actions">
