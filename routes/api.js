@@ -36,15 +36,36 @@ function requireAdminAuth(req, res, next) {
   next();
 }
 
-// Generate random unlock key in format XXXX-XXXX
+// Key duration configurations (in milliseconds)
+const KEY_DURATIONS = {
+  '5min': { label: '5 Minutes', duration: 5 * 60 * 1000 },
+  '30min': { label: '30 Minutes', duration: 30 * 60 * 1000 },
+  '1hour': { label: '1 Hour', duration: 60 * 60 * 1000 },
+  '1day': { label: '1 Day', duration: 24 * 60 * 60 * 1000 },
+  '7days': { label: '7 Days', duration: 7 * 24 * 60 * 60 * 1000 },
+  '30days': { label: '30 Days', duration: 30 * 24 * 60 * 60 * 1000 }
+};
+
+// Generate random unlock key in format XXXX-XXXX-XXXX
 function generateUnlockKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let key = '';
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 12; i++) {
     if (i > 0 && i % 4 === 0) key += '-';
     key += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return key;
+}
+
+// Calculate expiry timestamp based on duration type
+function calculateExpiry(durationType = '5min') {
+  const duration = KEY_DURATIONS[durationType] || KEY_DURATIONS['5min'];
+  return new Date(Date.now() + duration.duration);
+}
+
+// Get duration info for a key
+function getDurationInfo(durationType) {
+  return KEY_DURATIONS[durationType] || KEY_DURATIONS['5min'];
 }
 
 // Generate secure token
@@ -133,7 +154,7 @@ router.post('/verify_key', async (req, res) => {
 
       // Check if key exists, is not used, and not expired
       const query = `
-        SELECT id FROM unlock_keys
+        SELECT id, duration_type FROM unlock_keys
         WHERE unlock_key = $1 AND used = false AND expires_at > NOW()
       `;
       console.log('🔍 QUERYING_KEY:', query, [unlock_key]);
@@ -149,8 +170,12 @@ router.post('/verify_key', async (req, res) => {
         });
       }
 
-      const keyId = result.rows[0].id;
+      const keyData = result.rows[0];
+      const keyId = keyData.id;
+      const durationType = keyData.duration_type || '5min';
+      
       console.log('🔑 KEY_ID_FOUND:', keyId);
+      console.log('⏱️ DURATION_TYPE:', durationType);
 
       // Mark key as used and save redeemed_by
       console.log('🔄 MARKING_KEY_AS_USED...');
@@ -162,25 +187,29 @@ router.post('/verify_key', async (req, res) => {
 
       // Generate a secure token for the user
       const token = generateSecureToken();
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+      const expiresAt = calculateExpiry(durationType);
+      const durationInfo = getDurationInfo(durationType);
 
       console.log('🎫 GENERATED_TOKEN:', token.substring(0, 8) + '...');
       console.log('⏰ EXPIRES_AT:', expiresAt.toISOString());
+      console.log('📋 DURATION_INFO:', durationInfo);
 
-      // Store token in database
+      // Store token in database with expiry
       console.log('💾 STORING_TOKEN_IN_DATABASE...');
       await client.query(
-        'INSERT INTO user_tokens (token, user_id, expires_at) VALUES ($1, $2, $3)',
-        [token, user_id, expiresAt]
+        'INSERT INTO user_tokens (token, user_id, expires_at, duration_type) VALUES ($1, $2, $3, $4)',
+        [token, user_id, expiresAt, durationType]
       );
       console.log('✅ TOKEN_STORED_SUCCESSFULLY');
 
       const response = {
         success: true,
         token: token,
-        message: 'Premium features unlocked!',
+        message: `Premium features unlocked for ${durationInfo.label}!`,
         premium_until: expiresAt.toISOString(),
-        duration_minutes: 5
+        duration_type: durationType,
+        duration_label: durationInfo.label,
+        duration_minutes: Math.floor(durationInfo.duration / (60 * 1000))
       };
 
       console.log('🎉 SUCCESS_RESPONSE:', response);
@@ -285,6 +314,62 @@ router.get('/keys', requireAdminAuth, async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching keys:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// POST /api/generate_key (for admin dashboard - requires auth)
+router.post('/generate_key', requireAdminAuth, async (req, res) => {
+  try {
+    const { duration_type = '5min' } = req.body;
+    
+    // Validate duration type
+    if (!KEY_DURATIONS[duration_type]) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid duration type'
+      });
+    }
+
+    const client = await pool.connect();
+
+    try {
+      const unlockKey = generateUnlockKey();
+      const expiresAt = calculateExpiry(duration_type);
+      const durationInfo = getDurationInfo(duration_type);
+
+      // Store the key in database
+      const result = await client.query(
+        'INSERT INTO unlock_keys (unlock_key, expires_at, duration_type, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id',
+        [unlockKey, expiresAt, duration_type]
+      );
+
+      const keyId = result.rows[0].id;
+
+      res.json({
+        success: true,
+        key: {
+          id: keyId,
+          unlock_key: unlockKey,
+          duration_type: duration_type,
+          duration_label: durationInfo.label,
+          expires_at: expiresAt.toISOString(),
+          created_at: new Date().toISOString(),
+          used: false,
+          redeemed_by: null
+        },
+        message: `Key generated successfully for ${durationInfo.label}`
+      });
+
+    } finally {
+      client.release();
+    }
+
+  } catch (error) {
+    console.error('Error generating key:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

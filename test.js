@@ -111,6 +111,45 @@ function testHealth() {
   req.end();
 }
 
+// Test admin login
+function testAdminLogin() {
+  console.log('\n🧪 Testing /admin/login endpoint...');
+
+  const data = JSON.stringify({
+    password: 'admin'
+  });
+
+  const options = {
+    hostname: BASE_URL.replace('https://', ''),
+    path: '/admin/login',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': data.length
+    }
+  };
+
+  const req = https.request(options, (res) => {
+    console.log(`Status: ${res.statusCode}`);
+
+    res.on('data', (chunk) => {
+      try {
+        const response = JSON.parse(chunk.toString());
+        console.log('Response:', JSON.stringify(response, null, 2));
+      } catch (e) {
+        console.log('Response:', chunk.toString());
+      }
+    });
+  });
+
+  req.on('error', (e) => {
+    console.error('❌ Error:', e.message);
+  });
+
+  req.write(data);
+  req.end();
+}
+
 // Run all tests
 console.log('🚀 Starting API tests for Render backend...');
 console.log('📍 Base URL:', BASE_URL);
@@ -119,3 +158,4 @@ console.log('⚠️  Make sure to update BASE_URL with your actual Render servic
 testHealth();
 setTimeout(testVerifyKey, 1000);
 setTimeout(testCheckToken, 2000);
+setTimeout(testAdminLogin, 3000);
