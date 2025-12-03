@@ -239,6 +239,9 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
     console.log('   Key expires at:', keyData.key_expires_at);
     console.log('   Premium duration:', premiumDurationSeconds, 'seconds');
 
+    // Generate WhatsApp-friendly format
+    const whatsappFormat = generateWhatsAppKeyFormat(key);
+
     res.json({
       success: true,
       key: {
@@ -249,9 +252,11 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
         premium_duration_seconds: premiumDurationSeconds,
         key_expires_at: keyData.key_expires_at,
         created_at: keyData.created_at,
-        used: false
+        used: false,
+        whatsapp_format: whatsappFormat
       },
-      message: `Key generated successfully for ${durationInfo.label}. Key expires in 30 days.`
+      message: `Key generated successfully for ${durationInfo.label}. Key expires in 30 days.`,
+      whatsapp_format: whatsappFormat
     });
 
   } catch (error) {
@@ -372,14 +377,36 @@ const KEY_DURATIONS = {
   '1month': { label: '1 Month', duration: 30 * 24 * 60 * 60 * 1000 }
 };
 
-// Generate random unlock key in new format: vsm-XXXXXXX-duration
+// Generate random unlock key with special characters for WhatsApp-friendly format
 function generateUnlockKey(durationType = '5min') {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const specialChars = ['@', '#', '-'];
+  
   let randomPart = '';
-  for (let i = 0; i < 7; i++) {
+  let hasSpecialChar = false;
+  
+  // Generate 6 characters first
+  for (let i = 0; i < 6; i++) {
     randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
   }
+  
+  // Add special character at position 3 (0-indexed)
+  const specialChar = specialChars[Math.floor(Math.random() * specialChars.length)];
+  randomPart = randomPart.substring(0, 3) + specialChar + randomPart.substring(3);
+  hasSpecialChar = true;
+  
+  // Generate one more character to make it 7 characters total
+  randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+  
   return `vsm-${randomPart}-${durationType}`;
+}
+
+// Generate WhatsApp-friendly key format
+function generateWhatsAppKeyFormat(unlockKey) {
+  return `Premium Unlock Key:
+👉 \`${unlockKey}\`
+
+Note: This key expires in 30 days.`;
 }
 
 module.exports = router;

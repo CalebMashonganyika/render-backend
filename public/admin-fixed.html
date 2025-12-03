@@ -437,7 +437,13 @@
 
                 if (result.success) {
                     const durationText = durationSelect.options[durationSelect.selectedIndex].text;
-                    showMessage(dashboardMessage, `✅ Key generated: ${result.key.unlock_key} (${result.key.duration_label || durationText})`, 'success');
+                    
+                    // Show success message with formatted key
+                    const formattedKey = result.whatsapp_format || `✅ Key generated: ${result.key.unlock_key} (${result.key.duration_label || durationText})`;
+                    showMessage(dashboardMessage, formattedKey, 'success');
+                    
+                    // Also show the formatted key in a special div for easy copying
+                    showWhatsAppKeyFormat(result.whatsapp_format);
                     loadKeys();
                 } else {
                     showMessage(dashboardMessage, '❌ ' + (result.message || 'Failed to generate key'), 'error');
@@ -781,11 +787,61 @@
             loadingElement.style.display = isLoading ? 'inline-block' : 'none';
         }
 
+        // Show WhatsApp key format in a special modal/div
+        function showWhatsAppKeyFormat(whatsappFormat) {
+            // Remove any existing format display
+            const existingFormat = document.getElementById('whatsapp-format-display');
+            if (existingFormat) {
+                existingFormat.remove();
+            }
+
+            // Create new format display
+            const formatDiv = document.createElement('div');
+            formatDiv.id = 'whatsapp-format-display';
+            formatDiv.className = 'bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4';
+            formatDiv.innerHTML = `
+                <div class="flex justify-between items-start mb-2">
+                    <h3 class="text-lg font-semibold text-blue-800">📱 WhatsApp-Friendly Key Format</h3>
+                    <button onclick="copyWhatsAppFormat()" class="btn-modern btn-success text-sm">📋 Copy</button>
+                </div>
+                <div class="bg-white border border-blue-300 rounded p-3 font-mono text-sm whitespace-pre-wrap" id="whatsapp-format-text">${whatsappFormat}</div>
+                <p class="text-xs text-blue-600 mt-2">💡 This format works perfectly with WhatsApp - users can tap the backtick code to copy!</p>
+            `;
+
+            // Insert after the dashboard message
+            const messageElement = document.getElementById('dashboard-message');
+            messageElement.parentNode.insertBefore(formatDiv, messageElement.nextSibling);
+        }
+
+        // Copy WhatsApp format to clipboard
+        async function copyWhatsAppFormat() {
+            const formatText = document.getElementById('whatsapp-format-text').textContent;
+            try {
+                await navigator.clipboard.writeText(formatText);
+                showMessage(dashboardMessage, '✅ WhatsApp format copied to clipboard!', 'success');
+            } catch (error) {
+                console.error('Copy failed:', error);
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = formatText;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                showMessage(dashboardMessage, '✅ WhatsApp format copied to clipboard!', 'success');
+            }
+        }
+
         // Copy key to clipboard with proper text
         async function copyKey(key) {
             try {
-                const clipboardText = `${key}\n\nThis key expires in 30 days.`;
-                await navigator.clipboard.writeText(clipboardText);
+                const whatsappFormat = `Premium Unlock Key:
+👉 \`${key}\`
+
+Note: This key expires in 30 days.`;
+                
+                await navigator.clipboard.writeText(whatsappFormat);
                 
                 // Show success feedback
                 const originalButton = event.target.closest('button');
@@ -801,12 +857,17 @@
                 }, 2000);
                 
                 // Show dashboard message
-                showMessage(dashboardMessage, `Key "${key}" copied to clipboard with expiration notice!`, 'success');
+                showMessage(dashboardMessage, `Key "${key}" copied to clipboard with WhatsApp formatting!`, 'success');
             } catch (error) {
                 console.error('Copy failed:', error);
                 // Fallback for older browsers
+                const whatsappFormat = `Premium Unlock Key:
+👉 \`${key}\`
+
+Note: This key expires in 30 days.`;
+                
                 const textArea = document.createElement('textarea');
-                textArea.value = `${key}\n\nThis key expires in 30 days.`;
+                textArea.value = whatsappFormat;
                 document.body.appendChild(textArea);
                 textArea.select();
                 document.execCommand('copy');
