@@ -69,10 +69,7 @@ function generateUnlockKey(durationType = '5min') {
 
 // Generate WhatsApp-friendly key format
 function generateWhatsAppKeyFormat(unlockKey) {
-  return `Premium Unlock Key:
-👉 \`${unlockKey}\`
-
-Note: This key expires in 30 days.`;
+  return unlockKey;
 }
 
 // Validate new key format: vsm-XXXXXXX-5min/1day/1month
