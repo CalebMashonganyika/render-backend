@@ -56,9 +56,21 @@ const limiter = rateLimit({
   max: 100, // limit each IP to 100 requests per windowMs
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  trustProxy: true // Trust proxy headers for accurate IP detection
+  trustProxy: true, // Trust proxy headers for accurate IP detection
+  // Custom handler to return JSON instead of plain text
+  handler: (req, res, next, options) => {
+    console.log('⚠️ Rate limit exceeded for IP:', req.ip);
+    res.status(429).json({
+      success: false,
+      error: 'Too many requests',
+      message: 'Rate limit exceeded. Please try again later.',
+      retryAfter: Math.round(options.windowMs / 1000) || 60
+    });
+  }
 });
+
 app.use('/api/', limiter);
+app.use('/admin/', limiter);
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));

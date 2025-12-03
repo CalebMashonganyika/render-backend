@@ -262,20 +262,22 @@ router.post('/verify_key', async (req, res) => {
 
       // If key doesn't exist, create it automatically with the encoded duration
       let keyId;
+      let keyExpiresAt;
       if (result.rows.length === 0) {
         console.log('🔑 KEY_NOT_FOUND_CREATING_NEW...');
         const durationInfo = getDurationInfo(durationType);
-        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
+        keyExpiresAt = new Date(Date.now() + durationInfo.duration); // Use encoded duration, not 30 days
         
         const insertResult = await client.query(
           'INSERT INTO unlock_keys (unlock_key, expires_at, used, duration_minutes, duration_type, created_at) VALUES ($1, $2, false, $3, $4, NOW()) RETURNING id',
-          [unlock_key, expiresAt, Math.floor(durationInfo.duration / (60 * 1000)), durationType]
+          [unlock_key, keyExpiresAt, Math.floor(durationInfo.duration / (60 * 1000)), durationType]
         );
         keyId = insertResult.rows[0].id;
-        console.log('✅ NEW_KEY_CREATED_WITH_ID:', keyId);
+        console.log('✅ NEW_KEY_CREATED_WITH_ID:', keyId, 'expires_at:', keyExpiresAt.toISOString());
       } else {
         const keyData = result.rows[0];
         keyId = keyData.id;
+        keyExpiresAt = new Date(keyData.expires_at);
         
         // Check if key is already used
         if (keyData.used) {
@@ -286,11 +288,10 @@ router.post('/verify_key', async (req, res) => {
           });
         }
         
-        // Check if key is expired
+        // Check if key is expired using SERVER TIME
         const now = new Date();
-        const expiresAt = new Date(keyData.expires_at);
-        if (now > expiresAt) {
-          console.log('❌ KEY_EXPIRED');
+        if (now > keyExpiresAt) {
+          console.log('❌ KEY_EXPIRED at:', keyExpiresAt.toISOString(), 'now:', now.toISOString());
           return res.status(400).json({
             success: false,
             error: 'Key has expired'
@@ -308,20 +309,19 @@ router.post('/verify_key', async (req, res) => {
       );
       console.log('✅ KEY_MARKED_AS_USED');
 
-      // Generate a secure token for the user
+      // Generate a secure token for the user using the KEY'S expires_at, not a new calculation
       const token = generateSecureToken();
-      const expiresAt = calculateExpiry(durationType);
       const durationInfo = getDurationInfo(durationType);
 
       console.log('🎫 GENERATED_TOKEN:', token.substring(0, 8) + '...');
-      console.log('⏰ EXPIRES_AT:', expiresAt.toISOString());
+      console.log('⏰ KEY_EXPIRES_AT:', keyExpiresAt.toISOString());
       console.log('📋 DURATION_INFO:', durationInfo);
 
-      // Store token in database with expiry
+      // Store token in database with the KEY'S expiry timestamp (not calculated from now)
       console.log('💾 STORING_TOKEN_IN_DATABASE...');
       await client.query(
         'INSERT INTO user_tokens (token, user_id, expires_at, duration_type) VALUES ($1, $2, $3, $4)',
-        [token, user_id, expiresAt, durationType]
+        [token, user_id, keyExpiresAt, durationType]
       );
       console.log('✅ TOKEN_STORED_SUCCESSFULLY');
 
@@ -329,7 +329,7 @@ router.post('/verify_key', async (req, res) => {
         success: true,
         message: 'Premium features unlocked!',
         token: token,
-        premium_until: expiresAt.toISOString(),
+        premium_until: keyExpiresAt.toISOString(), // Use the key's actual expires_at
         duration_type: durationType,
         duration_minutes: Math.floor(durationInfo.duration / (60 * 1000))
       };
@@ -387,40 +387,78 @@ router.post('/verify_key', async (req, res) => {
 
 // POST /api/check_token
 router.post('/check_token', async (req, res) => {
+  console.log('🔍 CHECK_TOKEN_REQUEST:', {
+    method: req.method,
+    url: req.url,
+    body: req.body,
+    timestamp: new Date().toISOString()
+  });
+
   try {
     const { token } = req.body;
 
     if (!token) {
       return res.status(400).json({
         success: false,
-        message: 'Token is required'
+        active: false,
+        error: 'Token is required'
       });
     }
 
     const client = await pool.connect();
 
     try {
-      // Check if token exists and is not expired
+      // Check if token exists and get its expiry
       const query = `
         SELECT user_id, expires_at FROM user_tokens
-        WHERE token = $1 AND expires_at > NOW()
+        WHERE token = $1
       `;
       const result = await client.query(query, [token]);
 
       if (result.rows.length === 0) {
+        console.log('❌ TOKEN_NOT_FOUND:', token.substring(0, 8) + '...');
         return res.status(401).json({
           success: false,
-          message: 'Invalid or expired token'
+          active: false,
+          error: 'Invalid token'
         });
       }
 
       const { user_id, expires_at } = result.rows[0];
+      const now = new Date();
+      const expiresAt = new Date(expires_at);
 
+      // Calculate remaining time using SERVER TIME ONLY
+      const remainingTime = expiresAt.getTime() - now.getTime();
+      const isActive = remainingTime > 0;
+
+      console.log('🔍 TOKEN_CHECK_RESULT:', {
+        user_id,
+        expires_at: expires_at.toISOString(),
+        now: now.toISOString(),
+        remaining_time_ms: remainingTime,
+        active: isActive
+      });
+
+      if (!isActive) {
+        console.log('❌ TOKEN_EXPIRED');
+        return res.json({
+          success: true,
+          active: false,
+          expired_at: expires_at.toISOString(),
+          message: 'Premium subscription has expired'
+        });
+      }
+
+      console.log('✅ TOKEN_ACTIVE');
       res.json({
         success: true,
-        valid: true,
+        active: true,
         user_id: user_id,
-        expires_at: expires_at.toISOString()
+        expires_at: expires_at.toISOString(),
+        remaining_time: remainingTime, // Time left in milliseconds
+        remaining_minutes: Math.floor(remainingTime / (60 * 1000)),
+        message: 'Premium subscription is active'
       });
 
     } finally {
@@ -428,10 +466,11 @@ router.post('/check_token', async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Error checking token:', error);
+    console.error('❌ Error checking token:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      active: false,
+      error: 'Internal server error'
     });
   }
 });
