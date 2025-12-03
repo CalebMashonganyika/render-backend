@@ -10,9 +10,9 @@ const https = require('https');
 // Configuration
 const BASE_URL = process.env.RENDER_BACKEND_URL || 'http://localhost:3000';
 const TEST_KEYS = [
-    'vsm-ABCDEFG-5min',
-    'vsm-HIJKLMN-1day', 
-    'vsm-OPQRSTU-1month'
+    'vsm-ABCDEFGH-5min',
+    'vsm-IJKLMNOP-1day', 
+    'vsm-QRSTUVWX-1month'
 ];
 
 // Test results tracking
@@ -105,17 +105,17 @@ function testKeyFormatValidation() {
     console.log('\n🔑 Testing key format validation...');
     
     const testCases = [
-        { key: 'vsm-ABC1234-5min', expected: true, desc: 'Valid 5min key' },
-        { key: 'vsm-XYZ7890-1day', expected: true, desc: 'Valid 1day key' },
-        { key: 'vsm-ONE2345-1month', expected: true, desc: 'Valid 1month key' },
+        { key: 'vsm-ABC12345-5min', expected: true, desc: 'Valid 5min key' },
+        { key: 'vsm-XYZ78901-1day', expected: true, desc: 'Valid 1day key' },
+        { key: 'vsm-ONE23456-1month', expected: true, desc: 'Valid 1month key' },
         { key: 'invalid-key', expected: false, desc: 'Invalid format' },
         { key: 'vsm-ABC-5min', expected: false, desc: 'Too short code' },
-        { key: 'vsm-ABCDEFG-5mins', expected: false, desc: 'Invalid duration' },
-        { key: 'VSM-ABCDEFG-5min', expected: true, desc: 'Uppercase prefix' }
+        { key: 'vsm-ABCDEFGH-5mins', expected: false, desc: 'Invalid duration' },
+        { key: 'VSM-ABCDEFGH-5min', expected: true, desc: 'Uppercase prefix' }
     ];
 
     // Simple regex pattern for validation
-    const regex = /^vsm-[A-Z0-9]{7}-(5min|1day|1month)$/i;
+    const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1month)$/i;
     
     testCases.forEach(testCase => {
         const isValid = regex.test(testCase.key);
@@ -147,7 +147,7 @@ async function testKeyGeneration() {
                     `Key: ${keyData.unlock_key}, Duration: ${keyData.duration_type}`);
                 
                 // Validate key format
-                const regex = /^vsm-[A-Z0-9]{7}-(5min|1day|1month)$/i;
+                const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1month)$/i;
                 const formatValid = regex.test(keyData.unlock_key);
                 logTest(`Key Format for ${duration}`, formatValid, 
                     `Key matches pattern: ${keyData.unlock_key}`);
@@ -230,9 +230,9 @@ async function testErrorHandling() {
     const invalidKeys = [
         'invalid-key-format',
         'vsm-ABC-5min',  // Too short
-        'vsm-ABCDEFG-invalid',  // Invalid duration
-        'ABCDEFGH-5min',  // Missing prefix
-        'vsm-ABCDEFGH-5min'  // Too long
+        'vsm-ABCDEFGHI-invalid',  // Invalid duration
+        'ABCDEFGHIJ-5min',  // Missing prefix
+        'vsm-ABCDEFGHIJ-5min'  // Too long
     ];
     
     for (const invalidKey of invalidKeys) {

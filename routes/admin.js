@@ -379,26 +379,15 @@ const KEY_DURATIONS = {
   '1month': { label: '1 Month', duration: 30 * 24 * 60 * 60 * 1000 }
 };
 
-// Generate random unlock key with special characters for WhatsApp-friendly format
+// Generate random unlock key in standard format (alphanumeric only)
 function generateUnlockKey(durationType = '5min') {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const specialChars = ['@', '#', '-'];
   
+  // Generate exactly 8 alphanumeric characters
   let randomPart = '';
-  let hasSpecialChar = false;
-  
-  // Generate 6 characters first
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  
-  // Add special character at position 3 (0-indexed)
-  const specialChar = specialChars[Math.floor(Math.random() * specialChars.length)];
-  randomPart = randomPart.substring(0, 3) + specialChar + randomPart.substring(3);
-  hasSpecialChar = true;
-  
-  // Generate one more character to make it 7 characters total
-  randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
   
   return `vsm-${randomPart}-${durationType}`;
 }

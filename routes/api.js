@@ -182,7 +182,7 @@ router.post('/test_verify', async (req, res) => {
     if (!isValidFormat) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid key format. Expected format: vsm-XXXXXXX-5min/1day/1month'
+        error: 'Invalid key format. Expected format: vsm-XXXXXXXX-5min/1day/1month'
       });
     }
     
@@ -245,7 +245,7 @@ router.post('/verify_key', async (req, res) => {
       console.log('❌ INVALID_KEY_FORMAT:', unlock_key);
       return res.status(400).json({
         success: false,
-        error: 'Invalid key format. Expected format: vsm-XXXXXXX-5min/1day/1month'
+        error: 'Invalid key format. Expected format: vsm-XXXXXXXX-5min/1day/1month'
       });
     }
 

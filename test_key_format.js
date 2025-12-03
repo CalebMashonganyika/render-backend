@@ -119,9 +119,9 @@ runTest('Invalid key formats', () => {
 // Test 3: Duration extraction
 runTest('Duration extraction from keys', () => {
   const testCases = [
-    { key: 'vsm-ABC1234-5min', expected: '5min' },
-    { key: 'vsm-XYZ5678-1day', expected: '1day' },
-    { key: 'vsm-123ABCD-1month', expected: '1month' }
+    { key: 'vsm-ABC12345-5min', expected: '5min' },
+    { key: 'vsm-XYZ56789-1day', expected: '1day' },
+    { key: 'vsm-123ABCD4-1month', expected: '1month' }
   ];
   
   testCases.forEach(({ key, expected }) => {
