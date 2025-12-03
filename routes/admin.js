@@ -405,10 +405,7 @@ function generateUnlockKey(durationType = '5min') {
 
 // Generate WhatsApp-friendly key format
 function generateWhatsAppKeyFormat(unlockKey) {
-  return `Premium Unlock Key:
-👉 \`${unlockKey}\`
-
-Note: This key expires in 30 days.`;
+  return unlockKey;
 }
 
 module.exports = router;

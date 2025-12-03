@@ -801,11 +801,11 @@
             formatDiv.className = 'bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4';
             formatDiv.innerHTML = `
                 <div class="flex justify-between items-start mb-2">
-                    <h3 class="text-lg font-semibold text-blue-800">📱 WhatsApp-Friendly Key Format</h3>
+                    <h3 class="text-lg font-semibold text-blue-800">Generated Key</h3>
                     <button onclick="copyWhatsAppFormat()" class="btn-modern btn-success text-sm">📋 Copy</button>
                 </div>
                 <div class="bg-white border border-blue-300 rounded p-3 font-mono text-sm whitespace-pre-wrap" id="whatsapp-format-text">${whatsappFormat}</div>
-                <p class="text-xs text-blue-600 mt-2">💡 This format works perfectly with WhatsApp - users can tap the backtick code to copy!</p>
+
             `;
 
             // Insert after the dashboard message
@@ -836,10 +836,7 @@
         // Copy key to clipboard with proper text
         async function copyKey(key) {
             try {
-                const whatsappFormat = `Premium Unlock Key:
-👉 \`${key}\`
-
-Note: This key expires in 30 days.`;
+                const whatsappFormat = key;
                 
                 await navigator.clipboard.writeText(whatsappFormat);
                 
@@ -861,10 +858,7 @@ Note: This key expires in 30 days.`;
             } catch (error) {
                 console.error('Copy failed:', error);
                 // Fallback for older browsers
-                const whatsappFormat = `Premium Unlock Key:
-👉 \`${key}\`
-
-Note: This key expires in 30 days.`;
+                const whatsappFormat = key;
                 
                 const textArea = document.createElement('textarea');
                 textArea.value = whatsappFormat;
