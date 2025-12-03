@@ -47,9 +47,9 @@ const KEY_DURATIONS = {
 function generateUnlockKey(durationType = '5min') {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   
-  // Generate exactly 7 alphanumeric characters
+  // Generate exactly 8 alphanumeric characters
   let randomPart = '';
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 8; i++) {
     randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   
@@ -61,15 +61,18 @@ function generateWhatsAppKeyFormat(unlockKey) {
   return unlockKey;
 }
 
-// Validate standard key format: vsm-XXXXXXX-5min/1day/1month
+// Validate standard key format: vsm-XXXXXXXX-5min/1day/1month (alphanumeric only)
 function validateKeyFormat(key) {
-  const regex = /^vsm-[A-Z0-9]{7}-(5min|1day|1month)$/;
+  // Pattern: vsm-<8 alphanumeric chars only>-<duration>
+  // Only uppercase letters A-Z and digits 0-9 allowed
+  const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1month)$/;
   return regex.test(key);
 }
 
 // Extract duration from standard key format
 function extractDurationFromKey(key) {
-  const regex = /^vsm-[A-Z0-9]{7}-(5min|1day|1month)$/;
+  // Pattern: vsm-<8 alphanumeric chars only>-<duration>
+  const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1month)$/;
   const match = key.match(regex);
   
   if (match) {

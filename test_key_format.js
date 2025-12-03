@@ -13,19 +13,19 @@ const KEY_DURATIONS = {
   '1month': { label: '1 Month', duration: 30 * 24 * 60 * 60 * 1000 }
 };
 
-// Generate random unlock key in new format: vsm-XXXXXXX-duration
+// Generate random unlock key in new format: vsm-XXXXXXXX-duration
 function generateUnlockKey(durationType = '5min') {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let randomPart = '';
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 8; i++) {
     randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return `vsm-${randomPart}-${durationType}`;
 }
 
-// Validate new key format: vsm-XXXXXXX-5min/1day/1month
+// Validate new key format: vsm-XXXXXXXX-5min/1day/1month
 function validateKeyFormat(key) {
-  const regex = /^vsm-[A-Z0-9]{7}-(5min|1day|1month)$/;
+  const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1month)$/;
   return regex.test(key);
 }
 
@@ -68,14 +68,17 @@ function runTest(testName, testFunction) {
   }
 }
 
-// Test 1: Valid key formats
+// Test 1: Valid key formats (exactly 8 alphanumeric characters)
 runTest('Valid key formats', () => {
   const validKeys = [
-    'vsm-ABC1234-5min',
-    'vsm-XYZ5678-1day',
-    'vsm-123ABCD-1month',
-    'vsm-0000000-5min',
-    'vsm-ZZZ9999-1day'
+    'vsm-ABC12345-5min',
+    'vsm-XYZ56789-1day',
+    'vsm-123ABCD4-1month',
+    'vsm-00000001-5min',
+    'vsm-ZZZ9999A-1day',
+    'vsm-A7B9K2LM-5min',
+    'vsm-XP93KF2Q-1day',
+    'vsm-QW83JDK2-1month'
   ];
   
   validKeys.forEach(key => {
@@ -84,14 +87,19 @@ runTest('Valid key formats', () => {
     }
   });
   console.log(`  ✓ All ${validKeys.length} valid keys passed validation`);
+  console.log(`  ✓ All keys follow exact format: vsm-8_alphanumeric_chars-duration`);
 });
 
-// Test 2: Invalid key formats
+// Test 2: Invalid key formats (including special character rejection)
 runTest('Invalid key formats', () => {
   const invalidKeys = [
     'OLD-FORMAT',
-    'vsm-123-5min',           // Too short
-    'vsm-12345678-5min',      // Too long
+    'vsm-123-5min',           // Too short (only 3 chars)
+    'vsm-1234567-5min',       // Too short (only 7 chars)
+    'vsm-123456789-5min',     // Too long (9 chars)
+    'vsm-ABC1234#-5min',      // Contains special character #
+    'vsm-ABC1234@-5min',      // Contains special character @
+    'vsm-ABC1234--5min',      // Contains extra dash
     'vsm-ABC1234-invalid',    // Invalid duration
     'vsm-ABC1234-5minutes',   // Wrong duration format
     'VSM-ABC1234-5min',       // Wrong case
@@ -105,6 +113,7 @@ runTest('Invalid key formats', () => {
     }
   });
   console.log(`  ✓ All ${invalidKeys.length} invalid keys correctly rejected`);
+  console.log('  ✓ Special characters (#, @, -) properly rejected in middle segment');
 });
 
 // Test 3: Duration extraction
