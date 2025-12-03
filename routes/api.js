@@ -250,9 +250,9 @@ router.post('/verify_key', async (req, res) => {
     try {
       console.log('✅ DATABASE_CONNECTED');
 
-      // Check if key exists, is not used, and not expired
+      // Check if key exists with new schema
       const query = `
-        SELECT id, unlock_key, expires_at, used, duration_minutes, duration_type FROM unlock_keys
+        SELECT id, unlock_key, key_expires_at, premium_duration_seconds, used, duration_type, redeemed_by FROM unlock_keys
         WHERE unlock_key = $1
       `;
       console.log('🔍 QUERYING_KEY:', query, [unlock_key]);
@@ -260,26 +260,27 @@ router.post('/verify_key', async (req, res) => {
       const result = await client.query(query, [unlock_key]);
       console.log('📊 QUERY_RESULT:', result.rows);
 
-      // If key doesn't exist, create it automatically with the encoded duration
+      // If key doesn't exist, create it automatically with the new schema
       let keyId;
-      let keyExpiresAt;
+      let keyData;
       if (result.rows.length === 0) {
         console.log('🔑 KEY_NOT_FOUND_CREATING_NEW...');
         const durationInfo = getDurationInfo(durationType);
-        keyExpiresAt = new Date(Date.now() + durationInfo.duration); // Use encoded duration, not 30 days
+        const premiumDurationSeconds = Math.floor(durationInfo.duration / 1000);
+        const keyExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
         
         const insertResult = await client.query(
-          'INSERT INTO unlock_keys (unlock_key, expires_at, used, duration_minutes, duration_type, created_at) VALUES ($1, $2, false, $3, $4, NOW()) RETURNING id',
-          [unlock_key, keyExpiresAt, Math.floor(durationInfo.duration / (60 * 1000)), durationType]
+          'INSERT INTO unlock_keys (unlock_key, key_expires_at, premium_duration_seconds, used, duration_type, created_at) VALUES ($1, $2, $3, false, $4, NOW()) RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, used, duration_type',
+          [unlock_key, keyExpiresAt, premiumDurationSeconds, durationType]
         );
-        keyId = insertResult.rows[0].id;
-        console.log('✅ NEW_KEY_CREATED_WITH_ID:', keyId, 'expires_at:', keyExpiresAt.toISOString());
-      } else {
-        const keyData = result.rows[0];
+        keyData = insertResult.rows[0];
         keyId = keyData.id;
-        keyExpiresAt = new Date(keyData.expires_at);
+        console.log('✅ NEW_KEY_CREATED_WITH_ID:', keyId, 'key_expires_at:', keyData.key_expires_at);
+      } else {
+        keyData = result.rows[0];
+        keyId = keyData.id;
         
-        // Check if key is already used
+        // Check if key is already used (one-time-use enforcement)
         if (keyData.used) {
           console.log('❌ KEY_ALREADY_USED');
           return res.status(400).json({
@@ -288,20 +289,21 @@ router.post('/verify_key', async (req, res) => {
           });
         }
         
-        // Check if key is expired using SERVER TIME
+        // Check if key is expired (30-day key validity)
         const now = new Date();
+        const keyExpiresAt = new Date(keyData.key_expires_at);
         if (now > keyExpiresAt) {
           console.log('❌ KEY_EXPIRED at:', keyExpiresAt.toISOString(), 'now:', now.toISOString());
           return res.status(400).json({
             success: false,
-            error: 'Key has expired'
+            error: 'Key has expired (30-day validity period exceeded)'
           });
         }
       }
 
       console.log('🔑 KEY_ID_FOUND:', keyId);
 
-      // Mark key as used and save redeemed_by
+      // Mark key as used and save redeemed_by (one-time-use enforcement)
       console.log('🔄 MARKING_KEY_AS_USED...');
       await client.query(
         'UPDATE unlock_keys SET used = true, redeemed_by = $1, redeemed_at = NOW() WHERE id = $2',
@@ -309,19 +311,23 @@ router.post('/verify_key', async (req, res) => {
       );
       console.log('✅ KEY_MARKED_AS_USED');
 
-      // Generate a secure token for the user using the KEY'S expires_at, not a new calculation
+      // Generate a secure token for the user using the KEY'S premium_duration_seconds
       const token = generateSecureToken();
       const durationInfo = getDurationInfo(durationType);
 
+      // Calculate premium expiration based on the key's premium duration
+      const premiumExpiresAt = new Date(Date.now() + (keyData.premium_duration_seconds * 1000));
+
       console.log('🎫 GENERATED_TOKEN:', token.substring(0, 8) + '...');
-      console.log('⏰ KEY_EXPIRES_AT:', keyExpiresAt.toISOString());
+      console.log('⏰ PREMIUM_EXPIRES_AT:', premiumExpiresAt.toISOString());
+      console.log('⏳ PREMIUM_DURATION:', keyData.premium_duration_seconds, 'seconds');
       console.log('📋 DURATION_INFO:', durationInfo);
 
-      // Store token in database with the KEY'S expiry timestamp (not calculated from now)
+      // Store token in database with premium expiration
       console.log('💾 STORING_TOKEN_IN_DATABASE...');
       await client.query(
         'INSERT INTO user_tokens (token, user_id, expires_at, duration_type) VALUES ($1, $2, $3, $4)',
-        [token, user_id, keyExpiresAt, durationType]
+        [token, user_id, premiumExpiresAt, durationType]
       );
       console.log('✅ TOKEN_STORED_SUCCESSFULLY');
 
@@ -329,9 +335,10 @@ router.post('/verify_key', async (req, res) => {
         success: true,
         message: 'Premium features unlocked!',
         token: token,
-        premium_until: keyExpiresAt.toISOString(), // Use the key's actual expires_at
+        premium_until: premiumExpiresAt.toISOString(), // Premium expires based on key duration
         duration_type: durationType,
-        duration_minutes: Math.floor(durationInfo.duration / (60 * 1000))
+        premium_duration_seconds: keyData.premium_duration_seconds,
+        premium_duration_minutes: Math.floor(keyData.premium_duration_seconds / 60)
       };
 
       console.log('🎉 SUCCESS_RESPONSE:', response);
@@ -482,15 +489,32 @@ router.get('/keys', requireAdminAuth, async (req, res) => {
 
     try {
       const query = `
-        SELECT id, unlock_key, expires_at, used, redeemed_by, duration_minutes, created_at
+        SELECT id, unlock_key, key_expires_at, premium_duration_seconds, used, redeemed_by, duration_type, created_at
         FROM unlock_keys
         ORDER BY created_at DESC
       `;
       const result = await client.query(query);
 
+      // Add computed fields for better display
+      const keys = result.rows.map(key => {
+        const keyExpiresAt = new Date(key.key_expires_at);
+        const now = new Date();
+        const keyExpired = now > keyExpiresAt;
+        
+        const durationInfo = getDurationInfo(key.duration_type || '5min');
+        
+        return {
+          ...key,
+          key_expired: keyExpired,
+          key_expires_in_days: Math.max(0, Math.ceil((keyExpiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))),
+          premium_duration_label: durationInfo.label,
+          premium_duration_minutes: Math.floor(key.premium_duration_seconds / 60)
+        };
+      });
+
       res.json({
         success: true,
-        keys: result.rows
+        keys: keys
       });
 
     } finally {
@@ -523,13 +547,14 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
 
     try {
       const unlockKey = generateUnlockKey();
-      const expiresAt = calculateExpiry(duration_type);
       const durationInfo = getDurationInfo(duration_type);
+      const premiumDurationSeconds = Math.floor(durationInfo.duration / 1000); // Convert ms to seconds
+      const keyExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
 
-      // Store the key in database
+      // Store the key in database with new schema
       const result = await client.query(
-        'INSERT INTO unlock_keys (unlock_key, expires_at, duration_type, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id',
-        [unlockKey, expiresAt, duration_type]
+        'INSERT INTO unlock_keys (unlock_key, key_expires_at, premium_duration_seconds, duration_type, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
+        [unlockKey, keyExpiresAt, premiumDurationSeconds, duration_type]
       );
 
       const keyId = result.rows[0].id;
@@ -541,12 +566,13 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
           unlock_key: unlockKey,
           duration_type: duration_type,
           duration_label: durationInfo.label,
-          expires_at: expiresAt.toISOString(),
+          premium_duration_seconds: premiumDurationSeconds,
+          key_expires_at: keyExpiresAt.toISOString(),
           created_at: new Date().toISOString(),
           used: false,
           redeemed_by: null
         },
-        message: `Key generated successfully for ${durationInfo.label}`
+        message: `Key generated successfully for ${durationInfo.label}. Key expires in 30 days.`
       });
 
     } finally {

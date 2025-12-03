@@ -214,37 +214,44 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
       });
     }
 
-    // Set expiry based on duration type
+    // Get duration info and convert to seconds
     const durationInfo = KEY_DURATIONS[duration_type];
-    const expiresAt = new Date(Date.now() + durationInfo.duration);
+    const premiumDurationSeconds = Math.floor(durationInfo.duration / 1000); // Convert ms to seconds
 
-    // Insert new key with duration_type
+    // Key expires in 30 days, premium duration is separate
+    const keyExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
+
+    // Insert new key with new schema
     const insertQuery = `
-      INSERT INTO unlock_keys (unlock_key, expires_at, used, duration_type, duration_minutes, created_at)
-      VALUES ($1, $2, false, $3, $4, NOW())
-      RETURNING id, unlock_key, expires_at, duration_type, duration_minutes, created_at
+      INSERT INTO unlock_keys (unlock_key, key_expires_at, premium_duration_seconds, used, duration_type, created_at)
+      VALUES ($1, $2, $3, false, $4, NOW())
+      RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, duration_type, created_at
     `;
     const result = await client.query(insertQuery, [
       key, 
-      expiresAt, 
-      duration_type,
-      Math.floor(durationInfo.duration / (60 * 1000))
+      keyExpiresAt,
+      premiumDurationSeconds,
+      duration_type
     ]);
 
-    console.log('✅ Key generated successfully:', key, 'for', durationInfo.label);
+    const keyData = result.rows[0];
+    console.log('✅ Key generated successfully:', key);
+    console.log('   Key expires at:', keyData.key_expires_at);
+    console.log('   Premium duration:', premiumDurationSeconds, 'seconds');
 
     res.json({
       success: true,
       key: {
-        id: result.rows[0].id,
-        unlock_key: result.rows[0].unlock_key,
-        duration_type: result.rows[0].duration_type,
+        id: keyData.id,
+        unlock_key: keyData.unlock_key,
+        duration_type: keyData.duration_type,
         duration_label: durationInfo.label,
-        expires_at: result.rows[0].expires_at,
-        created_at: result.rows[0].created_at,
+        premium_duration_seconds: premiumDurationSeconds,
+        key_expires_at: keyData.key_expires_at,
+        created_at: keyData.created_at,
         used: false
       },
-      message: `Key generated successfully for ${durationInfo.label}`
+      message: `Key generated successfully for ${durationInfo.label}. Key expires in 30 days.`
     });
 
   } catch (error) {
