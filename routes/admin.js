@@ -221,17 +221,19 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
     // Key expires in 30 days, premium duration is separate
     const keyExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
 
-    // Insert new key with new schema
+    // Insert new key with both old and new schema fields
     const insertQuery = `
-      INSERT INTO unlock_keys (unlock_key, key_expires_at, premium_duration_seconds, used, duration_type, created_at)
-      VALUES ($1, $2, $3, false, $4, NOW())
+      INSERT INTO unlock_keys (unlock_key, expires_at, key_expires_at, premium_duration_seconds, used, duration_type, created_at, duration_minutes)
+      VALUES ($1, $2, $3, $4, false, $5, NOW(), $6)
       RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, duration_type, created_at
     `;
     const result = await client.query(insertQuery, [
       key, 
-      keyExpiresAt,
+      keyExpiresAt,      // expires_at (old column)
+      keyExpiresAt,      // key_expires_at (new column)
       premiumDurationSeconds,
-      duration_type
+      duration_type,
+      Math.floor(premiumDurationSeconds / 60)  // duration_minutes for backward compatibility
     ]);
 
     const keyData = result.rows[0];

@@ -292,8 +292,8 @@ router.post('/verify_key', async (req, res) => {
         const keyExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
         
         const insertResult = await client.query(
-          'INSERT INTO unlock_keys (unlock_key, key_expires_at, premium_duration_seconds, used, duration_type, created_at) VALUES ($1, $2, $3, false, $4, NOW()) RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, used, duration_type',
-          [unlock_key, keyExpiresAt, premiumDurationSeconds, durationType]
+          'INSERT INTO unlock_keys (unlock_key, expires_at, key_expires_at, premium_duration_seconds, used, duration_type, created_at, duration_minutes) VALUES ($1, $2, $3, $4, false, $5, NOW(), $6) RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, used, duration_type',
+          [unlock_key, keyExpiresAt, keyExpiresAt, premiumDurationSeconds, durationType, Math.floor(premiumDurationSeconds / 60)]
         );
         keyData = insertResult.rows[0];
         keyId = keyData.id;
@@ -511,7 +511,7 @@ router.get('/keys', requireAdminAuth, async (req, res) => {
 
     try {
       const query = `
-        SELECT id, unlock_key, key_expires_at, premium_duration_seconds, used, redeemed_by, duration_type, created_at
+        SELECT id, unlock_key, expires_at, key_expires_at, premium_duration_seconds, used, redeemed_by, duration_type, created_at, duration_minutes
         FROM unlock_keys
         ORDER BY created_at DESC
       `;
@@ -573,13 +573,13 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
       const premiumDurationSeconds = Math.floor(durationInfo.duration / 1000); // Convert ms to seconds
       const keyExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
 
-      // Store the key in database with new schema
+      // Store the key in database using the new schema
       const result = await client.query(
-        'INSERT INTO unlock_keys (unlock_key, key_expires_at, premium_duration_seconds, duration_type, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id',
+        'INSERT INTO unlock_keys (unlock_key, key_expires_at, premium_duration_seconds, duration_type, used, created_at) VALUES ($1, $2, $3, $4, false, NOW()) RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, duration_type, used, created_at',
         [unlockKey, keyExpiresAt, premiumDurationSeconds, duration_type]
       );
 
-      const keyId = result.rows[0].id;
+      const keyData = result.rows[0];
 
       // Generate WhatsApp-friendly format
       const whatsappFormat = generateWhatsAppKeyFormat(unlockKey);
@@ -587,15 +587,14 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
       res.json({
         success: true,
         key: {
-          id: keyId,
-          unlock_key: unlockKey,
-          duration_type: duration_type,
+          id: keyData.id,
+          unlock_key: keyData.unlock_key,
+          duration_type: keyData.duration_type,
           duration_label: durationInfo.label,
-          premium_duration_seconds: premiumDurationSeconds,
-          key_expires_at: keyExpiresAt.toISOString(),
-          created_at: new Date().toISOString(),
-          used: false,
-          redeemed_by: null,
+          premium_duration_seconds: keyData.premium_duration_seconds,
+          key_expires_at: keyData.key_expires_at,
+          created_at: keyData.created_at,
+          used: keyData.used,
           whatsapp_format: whatsappFormat
         },
         message: `Key generated successfully for ${durationInfo.label}. Key expires in 30 days.`,
