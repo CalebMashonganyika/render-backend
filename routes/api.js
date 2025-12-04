@@ -326,35 +326,72 @@ router.post('/verify_key', async (req, res) => {
       );
       console.log('✅ KEY_MARKED_AS_USED');
 
-      // Generate a secure token for the user using the KEY'S premium_duration_seconds
+      // Generate a secure token for the user
       const token = generateSecureToken();
       const durationInfo = getDurationInfo(durationType);
 
-      // Calculate premium expiration based on the key's premium duration
-      const premiumExpiresAt = new Date(Date.now() + (keyData.premium_duration_seconds * 1000));
+      // CRITICAL FIX: Calculate premium expiration using duration from key format, NOT database
+      // Ensure we get the correct duration in milliseconds
+      const durationMs = durationInfo.duration; // This comes from KEY_DURATIONS mapping
+      const currentTimestamp = Date.now();
+      const premiumExpiresAt = new Date(currentTimestamp + durationMs);
+
+      console.log('🔍 DURATION_TYPE_FROM_KEY:', durationType);
+      console.log('🔍 DURATION_INFO:', durationInfo);
+      console.log('🔍 DURATION_MS:', durationMs);
+      console.log('🔍 NOW_TIMESTAMP:', now);
+      console.log('🔍 CALCULATED_EXPIRES_AT:', premiumExpiresAt.toISOString());
 
       console.log('🎫 GENERATED_TOKEN:', token.substring(0, 8) + '...');
-      console.log('⏰ PREMIUM_EXPIRES_AT:', premiumExpiresAt.toISOString());
-      console.log('⏳ PREMIUM_DURATION:', keyData.premium_duration_seconds, 'seconds');
+      console.log('⏰ ORIGINAL_PREMIUM_EXPIRES_AT:', premiumExpiresAt.toISOString());
+      console.log('⏰ ORIGINAL_EXPIRES_AT_LOCAL:', premiumExpiresAt.toString());
+      console.log('⏳ CALCULATED_DURATION_MS:', durationMs);
       console.log('📋 DURATION_INFO:', durationInfo);
 
-      // Store token in database with premium expiration
+      // DEBUG: Check if the timestamp is correct
+      console.log('🧪 TIMESTAMP_DEBUG:');
+      console.log('🧪 Is premiumExpiresAt in future?', premiumExpiresAt > new Date());
+      console.log('🧪 premiumExpiresAt.getTime():', premiumExpiresAt.getTime());
+      console.log('🧪 Date.now():', Date.now());
+      console.log('🧪 Difference (should be durationMs):', premiumExpiresAt.getTime() - Date.now());
+
+      // Store token in database with premium expiration using UTC
       console.log('💾 STORING_TOKEN_IN_DATABASE...');
+      // CRITICAL FIX: Store timestamp directly without timezone conversion
       await client.query(
         'INSERT INTO user_tokens (token, user_id, expires_at, duration_type) VALUES ($1, $2, $3, $4)',
-        [token, user_id, premiumExpiresAt, durationType]
+        [token, user_id, premiumExpiresAt.toISOString(), durationType]
       );
       console.log('✅ TOKEN_STORED_SUCCESSFULLY');
+      console.log('💾 STORED_ISO_EXPIRY:', premiumExpiresAt.toISOString());
+      console.log('💾 STORED_TIMESTAMP_VALUE:', premiumExpiresAt.getTime());
+
+      // CRITICAL FIX: Ensure premium_expires_at is properly returned to the app
+      // This timestamp MUST be used by the app for countdown - never recalculated locally
+      console.log('🔒 UTC PREMIUM_EXPIRES_AT:', utcExpiry.toISOString());
+      console.log('🔒 APP_MUST_USE_THIS_TIMESTAMP_FOR_COUNTDOWN');
+      
+      // Validate the timestamp is in the future
+      const now = new Date();
+      if (utcExpiry <= now) {
+        console.error('❌ CRITICAL_ERROR: Generated expiry time is not in the future!');
+        console.error('❌ NOW:', now.toISOString());
+        console.error('❌ EXPIRY:', utcExpiry.toISOString());
+        throw new Error('Generated expiry time is invalid');
+      }
 
       const response = {
         success: true,
         message: 'Premium features unlocked!',
         token: token,
         premium_until: premiumExpiresAt.toISOString(), // Premium expires based on key duration
+        premium_expires_at: premiumExpiresAt.toISOString(), // Same timestamp, explicit field name
         duration_type: durationType,
         premium_duration_seconds: keyData.premium_duration_seconds,
         premium_duration_minutes: Math.floor(keyData.premium_duration_seconds / 60)
       };
+
+      console.log('📤 RESPONSE_WITH_EXPIRY:', response);
 
       console.log('🎉 SUCCESS_RESPONSE:', response);
       res.json(response);
