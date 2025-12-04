@@ -339,7 +339,7 @@ router.post('/verify_key', async (req, res) => {
       console.log('🔍 DURATION_TYPE_FROM_KEY:', durationType);
       console.log('🔍 DURATION_INFO:', durationInfo);
       console.log('🔍 DURATION_MS:', durationMs);
-      console.log('🔍 NOW_TIMESTAMP:', now);
+      console.log('🔍 NOW_TIMESTAMP:', currentTimestamp);
       console.log('🔍 CALCULATED_EXPIRES_AT:', premiumExpiresAt.toISOString());
 
       console.log('🎫 GENERATED_TOKEN:', token.substring(0, 8) + '...');
@@ -368,15 +368,15 @@ router.post('/verify_key', async (req, res) => {
 
       // CRITICAL FIX: Ensure premium_expires_at is properly returned to the app
       // This timestamp MUST be used by the app for countdown - never recalculated locally
-      console.log('🔒 UTC PREMIUM_EXPIRES_AT:', utcExpiry.toISOString());
+      console.log('🔒 UTC PREMIUM_EXPIRES_AT:', premiumExpiresAt.toISOString());
       console.log('🔒 APP_MUST_USE_THIS_TIMESTAMP_FOR_COUNTDOWN');
       
       // Validate the timestamp is in the future
-      const now = new Date();
-      if (utcExpiry <= now) {
+      const validationNow = new Date();
+      if (premiumExpiresAt <= validationNow) {
         console.error('❌ CRITICAL_ERROR: Generated expiry time is not in the future!');
-        console.error('❌ NOW:', now.toISOString());
-        console.error('❌ EXPIRY:', utcExpiry.toISOString());
+        console.error('❌ NOW:', validationNow.toISOString());
+        console.error('❌ EXPIRY:', premiumExpiresAt.toISOString());
         throw new Error('Generated expiry time is invalid');
       }
 
