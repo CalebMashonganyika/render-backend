@@ -10,6 +10,8 @@ console.log('🧪 TESTING NEW KEY FORMAT IMPLEMENTATION\n');
 const KEY_DURATIONS = {
   '5min': { label: '5 Minutes', duration: 5 * 60 * 1000 },
   '1day': { label: '1 Day', duration: 24 * 60 * 60 * 1000 },
+  '1week': { label: '1 Week', duration: 7 * 24 * 60 * 60 * 1000 },
+  '2weeks': { label: '2 Weeks', duration: 14 * 24 * 60 * 60 * 1000 },
   '1month': { label: '1 Month', duration: 30 * 24 * 60 * 60 * 1000 }
 };
 
@@ -23,9 +25,9 @@ function generateUnlockKey(durationType = '5min') {
   return `vsm-${randomPart}-${durationType}`;
 }
 
-// Validate new key format: vsm-XXXXXXXX-5min/1day/1month
+// Validate new key format: vsm-XXXXXXXX-5min/1day/1week/2weeks/1month
 function validateKeyFormat(key) {
-  const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1month)$/;
+  const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1week|2weeks|1month)$/;
   return regex.test(key);
 }
 
@@ -73,12 +75,16 @@ runTest('Valid key formats', () => {
   const validKeys = [
     'vsm-ABC12345-5min',
     'vsm-XYZ56789-1day',
+    'vsm-123ABCD4-1week',    // NEW: 1 week duration
+    'vsm-456DEF78-2weeks',   // NEW: 2 weeks duration
     'vsm-123ABCD4-1month',
     'vsm-00000001-5min',
     'vsm-ZZZ9999A-1day',
     'vsm-A7B9K2LM-5min',
     'vsm-XP93KF2Q-1day',
-    'vsm-QW83JDK2-1month'
+    'vsm-QW83JDK2-1month',
+    'vsm-P23PIN8T-1week',    // NEW: Another 1 week example
+    'vsm-B952KKA9-2weeks'    // NEW: Another 2 weeks example
   ];
   
   validKeys.forEach(key => {
@@ -121,6 +127,8 @@ runTest('Duration extraction from keys', () => {
   const testCases = [
     { key: 'vsm-ABC12345-5min', expected: '5min' },
     { key: 'vsm-XYZ56789-1day', expected: '1day' },
+    { key: 'vsm-123ABCD4-1week', expected: '1week' },  // NEW: 1 week
+    { key: 'vsm-456DEF78-2weeks', expected: '2weeks' }, // NEW: 2 weeks
     { key: 'vsm-123ABCD4-1month', expected: '1month' }
   ];
   
@@ -135,7 +143,7 @@ runTest('Duration extraction from keys', () => {
 
 // Test 4: Key generation
 runTest('Key generation', () => {
-  for (let durationType of ['5min', '1day', '1month']) {
+  for (let durationType of ['5min', '1day', '1week', '2weeks', '1month']) {
     const generatedKey = generateUnlockKey(durationType);
     console.log(`  📝 Generated key for ${durationType}: ${generatedKey}`);
     
@@ -154,8 +162,8 @@ runTest('Key generation', () => {
 // Test 5: Expiry calculation
 runTest('Expiry calculation', () => {
   const now = Date.now();
-  
-  for (let durationType of ['5min', '1day', '1month']) {
+
+  for (let durationType of ['5min', '1day', '1week', '2weeks', '1month']) {
     const expiry = calculateExpiry(durationType);
     const expectedDuration = KEY_DURATIONS[durationType].duration;
     const actualDuration = expiry.getTime() - now;
@@ -170,7 +178,7 @@ runTest('Expiry calculation', () => {
 
 // Test 6: Duration info retrieval
 runTest('Duration info retrieval', () => {
-  const testCases = ['5min', '1day', '1month'];
+  const testCases = ['5min', '1day', '1week', '2weeks', '1month'];
   
   testCases.forEach(durationType => {
     const info = getDurationInfo(durationType);
@@ -184,12 +192,14 @@ runTest('Duration info retrieval', () => {
 // Generate and test sample keys
 console.log('🎫 SAMPLE KEY GENERATION TEST:');
 console.log('================================');
-for (let i = 0; i < 5; i++) {
-  const key = generateUnlockKey('5min');
+const allDurations = ['5min', '1day', '1week', '2weeks', '1month'];
+for (let i = 0; i < allDurations.length; i++) {
+  const durationType = allDurations[i];
+  const key = generateUnlockKey(durationType);
   const duration = extractDurationFromKey(key);
   const expiry = calculateExpiry(duration);
   const durationInfo = getDurationInfo(duration);
-  
+
   console.log(`Key ${i + 1}: ${key}`);
   console.log(`  Duration: ${duration}`);
   console.log(`  Label: ${durationInfo.label}`);
