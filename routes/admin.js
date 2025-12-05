@@ -184,7 +184,7 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
     if (!KEY_DURATIONS[duration_type]) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid duration type. Must be one of: 5min, 1day, 1month'
+        message: 'Invalid duration type. Must be one of: 5min, 1day, 1week, 2weeks, 1month'
       });
     }
 
@@ -376,6 +376,8 @@ router.put('/keys/:id/toggle', requireAdminAuth, async (req, res) => {
 const KEY_DURATIONS = {
   '5min': { label: '5 Minutes', duration: 5 * 60 * 1000 },
   '1day': { label: '1 Day', duration: 24 * 60 * 60 * 1000 },
+  '1week': { label: '1 Week', duration: 7 * 24 * 60 * 60 * 1000 },
+  '2weeks': { label: '2 Weeks', duration: 14 * 24 * 60 * 60 * 1000 },
   '1month': { label: '1 Month', duration: 30 * 24 * 60 * 60 * 1000 }
 };
 

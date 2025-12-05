@@ -40,6 +40,8 @@ function requireAdminAuth(req, res, next) {
 const KEY_DURATIONS = {
   '5min': { label: '5 Minutes', duration: 5 * 60 * 1000 },
   '1day': { label: '1 Day', duration: 24 * 60 * 60 * 1000 },
+  '1week': { label: '1 Week', duration: 7 * 24 * 60 * 60 * 1000 },
+  '2weeks': { label: '2 Weeks', duration: 14 * 24 * 60 * 60 * 1000 },
   '1month': { label: '1 Month', duration: 30 * 24 * 60 * 60 * 1000 }
 };
 
@@ -61,25 +63,25 @@ function generateWhatsAppKeyFormat(unlockKey) {
   return unlockKey;
 }
 
-// Validate standard key format: vsm-XXXXXXXX-5min/1day/1month (alphanumeric only)
+// Validate standard key format: vsm-XXXXXXXX-5min/1day/1week/2weeks/1month (alphanumeric only)
 function validateKeyFormat(key) {
   // Pattern: vsm-<8 alphanumeric chars only>-<duration>
   // Only uppercase letters A-Z and digits 0-9 allowed
-  const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1month)$/;
+  const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1week|2weeks|1month)$/;
   return regex.test(key);
 }
 
 // Extract duration from standard key format
 function extractDurationFromKey(key) {
   // Pattern: vsm-<8 alphanumeric chars only>-<duration>
-  const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1month)$/;
+  const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1week|2weeks|1month)$/;
   const match = key.match(regex);
-  
+
   if (match) {
     const durationType = match[1];
     return KEY_DURATIONS[durationType] ? durationType : null;
   }
-  
+
   return null;
 }
 
@@ -664,5 +666,6 @@ router.get('/routes', (req, res) => {
     message: 'Available API routes'
   });
 });
+
 
 module.exports = router;

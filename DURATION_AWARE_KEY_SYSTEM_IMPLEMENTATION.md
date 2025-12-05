@@ -18,9 +18,10 @@ This implementation fixes the key duration issue where all keys were unlocking t
 - **Enhanced key verification** to extract duration from key format
 - **Improved error handling** for invalid key formats
 - **Updated database queries** to handle duration columns consistently
+- **Added new duration options**: 1 Week and 2 Weeks
 
 ### 3. Admin Dashboard Updates
-- **Duration selector dropdown** with options: 5 Minutes, 1 Day, 1 Month
+- **Duration selector dropdown** with options: 5 Minutes, 1 Day, 1 Week, 2 Weeks, 1 Month
 - **Real-time key display** showing duration information
 - **Enhanced key management** with duration status
 
@@ -32,17 +33,19 @@ This implementation fixes the key duration issue where all keys were unlocking t
 
 ## Key Format
 
-All premium keys now follow the pattern: `vsm-<7-character-code>-<duration>`
+All premium keys now follow the pattern: `vsm-<8-character-code>-<duration>`
 
 **Examples:**
 - `vsm-4KD9P2A-5min` (5-minute key)
 - `vsm-A92LMQX-1day` (1-day key)
+- `vsm-ZPLX09M-1week` (1-week key)
+- `vsm-ABCD123-2weeks` (2-weeks key)
 - `vsm-ZPLX09M-1month` (1-month key)
 
 **Format breakdown:**
 - `vsm-`: Prefix indicating VSM key format
-- `4KD9P2A`: 7-character random alphanumeric code
-- `5min/1day/1month`: Duration identifier
+- `4KD9P2A`: 8-character random alphanumeric code
+- `5min/1day/1week/2weeks/1month`: Duration identifier
 
 ## Database Migration
 
@@ -157,7 +160,9 @@ node test_key_duration_system.js
 // Test different key formats
 final result1 = await SubscriptionService.verifyUnlockKey('device123', 'vsm-ABCDEFG-5min');
 final result2 = await SubscriptionService.verifyUnlockKey('device123', 'vsm-XYZ7890-1day');
-final result3 = await SubscriptionService.verifyUnlockKey('device123', 'vsm-ONE2345-1month');
+final result3 = await SubscriptionService.verifyUnlockKey('device123', 'vsm-ONE2345-1week');
+final result4 = await SubscriptionService.verifyUnlockKey('device123', 'vsm-TWO6789-2weeks');
+final result5 = await SubscriptionService.verifyUnlockKey('device123', 'vsm-ONE2345-1month');
 ```
 
 ## Duration Mapping
@@ -166,7 +171,9 @@ final result3 = await SubscriptionService.verifyUnlockKey('device123', 'vsm-ONE2
 |---------------|---------|----------|
 | `5min` | 5 | Quick testing, demos |
 | `1day` | 1,440 | Standard premium access |
-| `1month` | 43,200 | Extended premium access |
+| `1week` | 10,080 | Medium-term premium access |
+| `2weeks` | 20,160 | Extended premium access |
+| `1month` | 43,200 | Long-term premium access |
 
 ## Key Features
 
