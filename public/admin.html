@@ -301,6 +301,7 @@
                 <div class="key-details">
                     Created: ${new Date(key.created_at).toLocaleString()}
                     <br>Expires: ${expiresAt.toLocaleString()}
+                    <br>Duration: ${key.premium_duration_label || key.duration_type}
                     ${key.redeemed_by ? `<br>Redeemed by: ${key.redeemed_by}` : ''}
                 </div>
                 <div class="actions">
