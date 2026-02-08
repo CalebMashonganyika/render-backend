@@ -196,7 +196,7 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
     const maxAttempts = 10;
 
     do {
-      key = generateUnlockKey(duration_type);
+      key = generateUnlockKey();
       attempts++;
 
       // Check if key already exists
@@ -381,17 +381,24 @@ const KEY_DURATIONS = {
   '1month': { label: '1 Month', duration: 30 * 24 * 60 * 60 * 1000 }
 };
 
-// Generate random unlock key in standard format (alphanumeric only)
-function generateUnlockKey(durationType = '5min') {
+// Generate random unlock key in NEW format (vsm-XXXXXXXX-XXXX)
+// Duration is stored in database, NOT in the key
+function generateUnlockKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   
-  // Generate exactly 8 alphanumeric characters
-  let randomPart = '';
+  // Generate exactly 8 alphanumeric characters for first part
+  let firstPart = '';
   for (let i = 0; i < 8; i++) {
-    randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+    firstPart += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   
-  return `vsm-${randomPart}-${durationType}`;
+  // Generate exactly 4 alphanumeric characters for suffix (NO duration info)
+  let suffix = '';
+  for (let i = 0; i < 4; i++) {
+    suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  
+  return `vsm-${firstPart}-${suffix}`;
 }
 
 // Generate WhatsApp-friendly key format
