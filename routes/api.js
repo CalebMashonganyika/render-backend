@@ -45,17 +45,24 @@ const KEY_DURATIONS = {
   '1month': { label: '1 Month', duration: 30 * 24 * 60 * 60 * 1000 }
 };
 
-// Generate random unlock key in standard format
-function generateUnlockKey(durationType = '5min') {
+// Generate random unlock key in NEW format: vsm-XXXXXXXX-XXXX
+// Duration is stored in database, NOT in the key format
+function generateUnlockKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   
-  // Generate exactly 8 alphanumeric characters
-  let randomPart = '';
+  // Generate exactly 8 alphanumeric characters for the first part
+  let firstPart = '';
   for (let i = 0; i < 8; i++) {
-    randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+    firstPart += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   
-  return `vsm-${randomPart}-${durationType}`;
+  // Generate exactly 4 alphanumeric characters for the suffix
+  let suffix = '';
+  for (let i = 0; i < 4; i++) {
+    suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  
+  return `vsm-${firstPart}-${suffix}`;
 }
 
 // Generate WhatsApp-friendly key format
@@ -63,25 +70,34 @@ function generateWhatsAppKeyFormat(unlockKey) {
   return unlockKey;
 }
 
-// Validate standard key format: vsm-XXXXXXXX-5min/1day/1week/2weeks/1month (alphanumeric only)
+// Validate key format - ONLY new format accepted: vsm-XXXXXXXX-XXXX
+// Legacy format (with duration suffixes like 5min) is NO LONGER supported
 function validateKeyFormat(key) {
-  // Pattern: vsm-<8 alphanumeric chars only>-<duration>
-  // Only uppercase letters A-Z and digits 0-9 allowed
-  const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1week|2weeks|1month)$/;
+  // New format: vsm-<8 alphanumeric>-<4 alphanumeric> ONLY
+  const regex = /^vsm-[A-Z0-9]{8}-[A-Z0-9]{4}$/;
+  
+  // Check if it matches legacy format (should be rejected)
+  const legacyRegex = /^vsm-[A-Z0-9]{8}-(5min|1day|1week|2weeks|1month)$/;
+  
+  if (legacyRegex.test(key)) {
+    console.log('❌ LEGACY_FORMAT_REJECTED:', key);
+    return false; // Reject legacy format
+  }
+  
   return regex.test(key);
 }
 
-// Extract duration from standard key format
+// Extract duration from key - always returns null since new format doesn't have duration
 function extractDurationFromKey(key) {
-  // Pattern: vsm-<8 alphanumeric chars only>-<duration>
-  const regex = /^vsm-[A-Z0-9]{8}-(5min|1day|1week|2weeks|1month)$/;
-  const match = key.match(regex);
-
-  if (match) {
-    const durationType = match[1];
-    return KEY_DURATIONS[durationType] ? durationType : null;
+  // New format has no duration - use default
+  const regex = /^vsm-[A-Z0-9]{8}-[A-Z0-9]{4}$/;
+  
+  if (regex.test(key)) {
+    // New format key - use default duration of 5min
+    console.log('🔑 NEW_FORMAT_KEY_DETECTED - using default duration: 5min');
+    return '5min';
   }
-
+  
   return null;
 }
 
@@ -184,7 +200,7 @@ router.post('/test_verify', async (req, res) => {
     if (!isValidFormat) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid key format. Expected format: vsm-XXXXXXXX-5min/1day/1month'
+        error: 'Invalid key format. Only new format accepted: vsm-XXXXXXXX-XXXX (8 chars + dash + 4 alphanumeric chars)'
       });
     }
     
@@ -242,12 +258,12 @@ router.post('/verify_key', async (req, res) => {
       });
     }
 
-    // Validate standard key format
+    // Validate key format (ONLY new format accepted: vsm-XXXXXXXX-XXXX)
     if (!validateKeyFormat(unlock_key)) {
       console.log('❌ INVALID_KEY_FORMAT:', unlock_key);
       return res.status(400).json({
         success: false,
-        error: 'Invalid key format. Expected format: vsm-XXXXXXXX-5min/1day/1month'
+        error: 'Invalid key format. Only new format accepted: vsm-XXXXXXXX-XXXX (8 chars + dash + 4 alphanumeric chars)'
       });
     }
 
@@ -600,12 +616,13 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
     const client = await pool.connect();
 
     try {
+      // Generate key in NEW format: vsm-XXXXXXXX-XXXX
       const unlockKey = generateUnlockKey();
       const durationInfo = getDurationInfo(duration_type);
       const premiumDurationSeconds = Math.floor(durationInfo.duration / 1000); // Convert ms to seconds
       const keyExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
 
-      // Store the key in database using the new schema
+      // Store the key in database with duration_type
       const result = await client.query(
         'INSERT INTO unlock_keys (unlock_key, key_expires_at, premium_duration_seconds, duration_type, used, created_at) VALUES ($1, $2, $3, $4, false, NOW()) RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, duration_type, used, created_at',
         [unlockKey, keyExpiresAt, premiumDurationSeconds, duration_type]
