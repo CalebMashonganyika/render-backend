@@ -87,15 +87,15 @@ function validateKeyFormat(key) {
   return regex.test(key);
 }
 
-// Extract duration from key - always returns null since new format doesn't have duration
+ // Extract duration from key - for new format keys, we'll get duration from database
 function extractDurationFromKey(key) {
-  // New format has no duration - use default
+  // New format has no duration in the key itself
   const regex = /^vsm-[A-Z0-9]{8}-[A-Z0-9]{4}$/;
   
   if (regex.test(key)) {
-    // New format key - use default duration of 5min
-    console.log('🔑 NEW_FORMAT_KEY_DETECTED - using default duration: 5min');
-    return '5min';
+    // We'll get duration from database when we fetch the key
+    console.log('🔑 NEW_FORMAT_KEY_DETECTED - duration will be retrieved from database');
+    return null; // Return null to indicate we need to get duration from DB
   }
   
   return null;
@@ -267,51 +267,45 @@ router.post('/verify_key', async (req, res) => {
       });
     }
 
-    // Extract duration from key format
-    const durationType = extractDurationFromKey(unlock_key);
-    if (!durationType) {
-      console.log('❌ INVALID_DURATION_FROM_KEY:', unlock_key);
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid duration type in key'
-      });
-    }
+     console.log('🔗 CONNECTING_TO_DATABASE...');
+     const client = await pool.connect();
 
-    console.log('🔗 CONNECTING_TO_DATABASE...');
-    const client = await pool.connect();
+     try {
+       console.log('✅ DATABASE_CONNECTED');
 
-    try {
-      console.log('✅ DATABASE_CONNECTED');
+       // Check if key exists with new schema
+       const query = `
+         SELECT id, unlock_key, key_expires_at, premium_duration_seconds, used, duration_type, redeemed_by FROM unlock_keys
+         WHERE unlock_key = $1
+       `;
+       console.log('🔍 QUERYING_KEY:', query, [unlock_key]);
+       
+       const result = await client.query(query, [unlock_key]);
+       console.log('📊 QUERY_RESULT:', result.rows);
 
-      // Check if key exists with new schema
-      const query = `
-        SELECT id, unlock_key, key_expires_at, premium_duration_seconds, used, duration_type, redeemed_by FROM unlock_keys
-        WHERE unlock_key = $1
-      `;
-      console.log('🔍 QUERYING_KEY:', query, [unlock_key]);
-      
-      const result = await client.query(query, [unlock_key]);
-      console.log('📊 QUERY_RESULT:', result.rows);
-
-      // If key doesn't exist, create it automatically with the new schema
-      let keyId;
-      let keyData;
-      if (result.rows.length === 0) {
-        console.log('🔑 KEY_NOT_FOUND_CREATING_NEW...');
-        const durationInfo = getDurationInfo(durationType);
-        const premiumDurationSeconds = Math.floor(durationInfo.duration / 1000);
-        const keyExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
-        
-        const insertResult = await client.query(
-          'INSERT INTO unlock_keys (unlock_key, expires_at, key_expires_at, premium_duration_seconds, used, duration_type, created_at, duration_minutes) VALUES ($1, $2, $3, $4, false, $5, NOW(), $6) RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, used, duration_type',
-          [unlock_key, keyExpiresAt, keyExpiresAt, premiumDurationSeconds, durationType, Math.floor(premiumDurationSeconds / 60)]
-        );
-        keyData = insertResult.rows[0];
-        keyId = keyData.id;
-        console.log('✅ NEW_KEY_CREATED_WITH_ID:', keyId, 'key_expires_at:', keyData.key_expires_at);
-      } else {
-        keyData = result.rows[0];
-        keyId = keyData.id;
+       // If key doesn't exist, create it automatically with the new schema
+       let keyId;
+       let keyData;
+       let durationType; // Will be set from DB or default
+       
+       if (result.rows.length === 0) {
+         console.log('🔑 KEY_NOT_FOUND_CREATING_NEW...');
+         durationType = '5min'; // Default if key not found
+         const durationInfo = getDurationInfo(durationType);
+         const premiumDurationSeconds = Math.floor(durationInfo.duration / 1000);
+         const keyExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+         
+         const insertResult = await client.query(
+           'INSERT INTO unlock_keys (unlock_key, expires_at, key_expires_at, premium_duration_seconds, used, duration_type, created_at, duration_minutes) VALUES ($1, $2, $3, $4, false, $5, NOW(), $6) RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, used, duration_type',
+           [unlock_key, keyExpiresAt, keyExpiresAt, premiumDurationSeconds, durationType, Math.floor(premiumDurationSeconds / 60)]
+         );
+         keyData = insertResult.rows[0];
+         keyId = keyData.id;
+         console.log('✅ NEW_KEY_CREATED_WITH_ID:', keyId, 'key_expires_at:', keyData.key_expires_at);
+       } else {
+         keyData = result.rows[0];
+         keyId = keyData.id;
+         durationType = keyData.duration_type; // Get duration from database
         
         // Check if key is already used (one-time-use enforcement)
         if (keyData.used) {
@@ -398,6 +392,38 @@ router.post('/verify_key', async (req, res) => {
         throw new Error('Generated expiry time is invalid');
       }
 
+      // Fix duration type based on actual premium duration seconds from database
+      let fixedDurationType = durationType;
+      const actualSeconds = keyData.premium_duration_seconds;
+      
+      if (actualSeconds >= 604800) { // 7 days = 604800 seconds
+        fixedDurationType = '1week';
+      } else if (actualSeconds >= 172800) { // 2 days = 172800 seconds (2 weeks)
+        fixedDurationType = '2weeks';
+      } else if (actualSeconds >= 86400) { // 1 day = 86400 seconds
+        fixedDurationType = '1day';
+      } else if (actualSeconds >= 2592000) { // 30 days = 2592000 seconds
+        fixedDurationType = '1month';
+      } else { // Less than 1 day
+        fixedDurationType = '5min';
+      }
+      
+      if (fixedDurationType !== durationType) {
+        console.log('🔧 FIXED_DURATION_TYPE: Changed from', durationType, 'to', fixedDurationType, 'based on actual seconds:', actualSeconds);
+        // Update duration_type in database for future reference
+        await client.query(
+          'UPDATE unlock_keys SET duration_type = $1 WHERE id = $2',
+          [fixedDurationType, keyId]
+        );
+        durationType = fixedDurationType; // Use the fixed duration type for calculation
+        // Recalculate expiry with correct duration
+        const durationInfo = getDurationInfo(durationType);
+        const durationMs = durationInfo.duration; // This comes from KEY_DURATIONS mapping
+        const currentTimestamp = Date.now();
+        premiumExpiresAt = new Date(currentTimestamp + durationMs);
+        console.log('🔧 RECALCULATED_EXPIRY: New expiry is', premiumExpiresAt.toISOString());
+      }
+      
       const response = {
         success: true,
         message: 'Premium features unlocked!',
