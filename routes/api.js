@@ -330,14 +330,6 @@ router.post('/verify_key', async (req, res) => {
 
       console.log('🔑 KEY_ID_FOUND:', keyId);
 
-      // Mark key as used and save redeemed_by (one-time-use enforcement)
-      console.log('🔄 MARKING_KEY_AS_USED...');
-      await client.query(
-        'UPDATE unlock_keys SET used = true, redeemed_by = $1, redeemed_at = NOW() WHERE id = $2',
-        [user_id, keyId]
-      );
-      console.log('✅ KEY_MARKED_AS_USED');
-
       // Generate a secure token for the user
       const token = generateSecureToken();
       const durationInfo = getDurationInfo(durationType);
@@ -423,6 +415,14 @@ router.post('/verify_key', async (req, res) => {
         premiumExpiresAt = new Date(currentTimestamp + durationMs);
         console.log('🔧 RECALCULATED_EXPIRY: New expiry is', premiumExpiresAt.toISOString());
       }
+      
+      // Mark key as used and save redeemed_by (one-time-use enforcement) - MOVED HERE AFTER ALL OPERATIONS SUCCESSFULLY COMPLETED
+      console.log('🔄 MARKING_KEY_AS_USED...');
+      await client.query(
+        'UPDATE unlock_keys SET used = true, redeemed_by = $1, redeemed_at = NOW() WHERE id = $2',
+        [user_id, keyId]
+      );
+      console.log('✅ KEY_MARKED_AS_USED');
       
       const response = {
         success: true,
