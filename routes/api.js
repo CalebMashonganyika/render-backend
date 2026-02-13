@@ -338,7 +338,7 @@ router.post('/verify_key', async (req, res) => {
       // Ensure we get the correct duration in milliseconds
       const durationMs = durationInfo.duration; // This comes from KEY_DURATIONS mapping
       const currentTimestamp = Date.now();
-      const premiumExpiresAt = new Date(currentTimestamp + durationMs);
+      let premiumExpiresAt = new Date(currentTimestamp + durationMs);
 
       console.log('🔍 DURATION_TYPE_FROM_KEY:', durationType);
       console.log('🔍 DURATION_INFO:', durationInfo);
@@ -384,37 +384,46 @@ router.post('/verify_key', async (req, res) => {
         throw new Error('Generated expiry time is invalid');
       }
 
-      // Fix duration type based on actual premium duration seconds from database
-      let fixedDurationType = durationType;
-      const actualSeconds = keyData.premium_duration_seconds;
-      
-      if (actualSeconds >= 604800) { // 7 days = 604800 seconds
-        fixedDurationType = '1week';
-      } else if (actualSeconds >= 172800) { // 2 days = 172800 seconds (2 weeks)
-        fixedDurationType = '2weeks';
-      } else if (actualSeconds >= 86400) { // 1 day = 86400 seconds
-        fixedDurationType = '1day';
-      } else if (actualSeconds >= 2592000) { // 30 days = 2592000 seconds
-        fixedDurationType = '1month';
-      } else { // Less than 1 day
-        fixedDurationType = '5min';
-      }
-      
-      if (fixedDurationType !== durationType) {
-        console.log('🔧 FIXED_DURATION_TYPE: Changed from', durationType, 'to', fixedDurationType, 'based on actual seconds:', actualSeconds);
-        // Update duration_type in database for future reference
-        await client.query(
-          'UPDATE unlock_keys SET duration_type = $1 WHERE id = $2',
-          [fixedDurationType, keyId]
-        );
-        durationType = fixedDurationType; // Use the fixed duration type for calculation
-        // Recalculate expiry with correct duration
-        const durationInfo = getDurationInfo(durationType);
-        const durationMs = durationInfo.duration; // This comes from KEY_DURATIONS mapping
-        const currentTimestamp = Date.now();
-        premiumExpiresAt = new Date(currentTimestamp + durationMs);
-        console.log('🔧 RECALCULATED_EXPIRY: New expiry is', premiumExpiresAt.toISOString());
-      }
+        // Fix duration type based on actual premium duration seconds from database
+        let fixedDurationType = durationType;
+        const actualSeconds = keyData.premium_duration_seconds;
+        
+        console.log('🔍 ACTUAL_SECONDS_TYPE:', typeof actualSeconds, 'ACTUAL_SECONDS:', actualSeconds, 'DURATION_TYPE:', durationType);
+        
+        const actualSecondsNum = Number(actualSeconds);
+        
+        if (actualSecondsNum >= 2592000) { // 30 days = 2592000 seconds
+          fixedDurationType = '1month';
+          console.log('✅ Duration type set to 1month');
+        } else if (actualSecondsNum >= 1209600) { // 14 days = 1209600 seconds (2 weeks)
+          fixedDurationType = '2weeks';
+          console.log('✅ Duration type set to 2weeks');
+        } else if (actualSecondsNum >= 604800) { // 7 days = 604800 seconds (1 week)
+          fixedDurationType = '1week';
+          console.log('✅ Duration type set to 1week');
+        } else if (actualSecondsNum >= 86400) { // 1 day = 86400 seconds
+          fixedDurationType = '1day';
+          console.log('✅ Duration type set to 1day');
+        } else { // Less than 1 day
+          fixedDurationType = '5min';
+          console.log('✅ Duration type set to 5min');
+        }
+        
+         if (fixedDurationType !== durationType) {
+          console.log('🔧 FIXED_DURATION_TYPE: Changed from', durationType, 'to', fixedDurationType, 'based on actual seconds:', actualSecondsNum);
+          // Update duration_type in database for future reference
+          await client.query(
+            'UPDATE unlock_keys SET duration_type = $1 WHERE id = $2',
+            [fixedDurationType, keyId]
+          );
+          durationType = fixedDurationType; // Use the fixed duration type for calculation
+          // Recalculate expiry with correct duration
+          const updatedDurationInfo = getDurationInfo(durationType);
+          const updatedDurationMs = updatedDurationInfo.duration; // This comes from KEY_DURATIONS mapping
+          const currentTimestamp = Date.now();
+          premiumExpiresAt = new Date(currentTimestamp + updatedDurationMs);
+          console.log('🔧 RECALCULATED_EXPIRY: New expiry is', premiumExpiresAt.toISOString());
+        }
       
       // Mark key as used and save redeemed_by (one-time-use enforcement) - MOVED HERE AFTER ALL OPERATIONS SUCCESSFULLY COMPLETED
       console.log('🔄 MARKING_KEY_AS_USED...');
