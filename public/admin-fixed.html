@@ -288,6 +288,8 @@
                                 <option value="1week">1 Week</option>
                                 <option value="2weeks">2 Weeks</option>
                                 <option value="1month">1 Month</option>
+                                <option value="1year">1 Year</option>
+                                <option value="lifetime">Lifetime Access</option>
                             </select>
                         </div>
                         <button id="generate-key-btn" class="btn-modern btn-success">
@@ -593,6 +595,11 @@
             // Key validity info
             const keyValidityDays = key.key_expires_in_days || 0;
             const keyValidityText = keyIsExpired ? 'Expired' : `${keyValidityDays} days left`;
+            const premiumDurationDetail = key.duration_type === 'lifetime'
+                ? 'Unlimited access'
+                : key.duration_type === '1year'
+                    ? '365 days'
+                    : `${key.premium_duration_minutes || 0} minutes`;
 
             tr.innerHTML = `
                 <td class="px-6 py-4 whitespace-nowrap">
@@ -613,7 +620,7 @@
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div class="font-medium">${key.premium_duration_label || 'Unknown'}</div>
-                    <div class="text-xs text-gray-500">${key.premium_duration_minutes || 0} minutes</div>
+                    <div class="text-xs text-gray-500">${premiumDurationDetail}</div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div class="font-medium">${keyValidityText}</div>

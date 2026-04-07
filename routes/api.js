@@ -36,13 +36,18 @@ function requireAdminAuth(req, res, next) {
   next();
 }
 
+const YEAR_IN_MS = 365 * 24 * 60 * 60 * 1000;
+const LIFETIME_IN_MS = 100 * YEAR_IN_MS;
+
 // Key duration configurations (in milliseconds)
 const KEY_DURATIONS = {
   '5min': { label: '5 Minutes', duration: 5 * 60 * 1000 },
   '1day': { label: '1 Day', duration: 24 * 60 * 60 * 1000 },
   '1week': { label: '1 Week', duration: 7 * 24 * 60 * 60 * 1000 },
   '2weeks': { label: '2 Weeks', duration: 14 * 24 * 60 * 60 * 1000 },
-  '1month': { label: '1 Month', duration: 30 * 24 * 60 * 60 * 1000 }
+  '1month': { label: '1 Month', duration: 30 * 24 * 60 * 60 * 1000 },
+  '1year': { label: '1 Year', duration: YEAR_IN_MS },
+  'lifetime': { label: 'Lifetime Access', duration: LIFETIME_IN_MS }
 };
 
 // Generate random unlock key in NEW format: vsm-XXXXXXXX-XXXX
@@ -77,7 +82,7 @@ function validateKeyFormat(key) {
   const regex = /^vsm-[A-Z0-9]{8}-[A-Z0-9]{4}$/;
   
   // Check if it matches legacy format (should be rejected)
-  const legacyRegex = /^vsm-[A-Z0-9]{8}-(5min|1day|1week|2weeks|1month)$/;
+  const legacyRegex = /^vsm-[A-Z0-9]{8}-(5min|1day|1week|2weeks|1month|1year|lifetime)$/;
   
   if (legacyRegex.test(key)) {
     console.log('❌ LEGACY_FORMAT_REJECTED:', key);
@@ -110,6 +115,35 @@ function calculateExpiry(durationType = '5min') {
 // Get duration info for a key
 function getDurationInfo(durationType) {
   return KEY_DURATIONS[durationType] || KEY_DURATIONS['5min'];
+}
+
+function resolveDurationTypeFromSeconds(actualSeconds, fallbackType = '5min') {
+  const actualSecondsNum = Number(actualSeconds);
+
+  if (!Number.isFinite(actualSecondsNum) || actualSecondsNum <= 0) {
+    return fallbackType;
+  }
+
+  if (actualSecondsNum >= LIFETIME_IN_MS / 1000) {
+    return 'lifetime';
+  }
+  if (actualSecondsNum >= YEAR_IN_MS / 1000) {
+    return '1year';
+  }
+  if (actualSecondsNum >= 2592000) {
+    return '1month';
+  }
+  if (actualSecondsNum >= 1209600) {
+    return '2weeks';
+  }
+  if (actualSecondsNum >= 604800) {
+    return '1week';
+  }
+  if (actualSecondsNum >= 86400) {
+    return '1day';
+  }
+
+  return '5min';
 }
 
 // Generate secure token
@@ -391,23 +425,11 @@ router.post('/verify_key', async (req, res) => {
         console.log('🔍 ACTUAL_SECONDS_TYPE:', typeof actualSeconds, 'ACTUAL_SECONDS:', actualSeconds, 'DURATION_TYPE:', durationType);
         
         const actualSecondsNum = Number(actualSeconds);
-        
-        if (actualSecondsNum >= 2592000) { // 30 days = 2592000 seconds
-          fixedDurationType = '1month';
-          console.log('✅ Duration type set to 1month');
-        } else if (actualSecondsNum >= 1209600) { // 14 days = 1209600 seconds (2 weeks)
-          fixedDurationType = '2weeks';
-          console.log('✅ Duration type set to 2weeks');
-        } else if (actualSecondsNum >= 604800) { // 7 days = 604800 seconds (1 week)
-          fixedDurationType = '1week';
-          console.log('✅ Duration type set to 1week');
-        } else if (actualSecondsNum >= 86400) { // 1 day = 86400 seconds
-          fixedDurationType = '1day';
-          console.log('✅ Duration type set to 1day');
-        } else { // Less than 1 day
-          fixedDurationType = '5min';
-          console.log('✅ Duration type set to 5min');
-        }
+        fixedDurationType = resolveDurationTypeFromSeconds(
+          actualSecondsNum,
+          durationType || '5min'
+        );
+        console.log('✅ Duration type resolved to', fixedDurationType);
         
          if (fixedDurationType !== durationType) {
           console.log('🔧 FIXED_DURATION_TYPE: Changed from', durationType, 'to', fixedDurationType, 'based on actual seconds:', actualSecondsNum);
