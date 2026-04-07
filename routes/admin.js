@@ -373,7 +373,8 @@ router.put('/keys/:id/toggle', requireAdminAuth, async (req, res) => {
 });
 
 const YEAR_IN_MS = 365 * 24 * 60 * 60 * 1000;
-const LIFETIME_IN_MS = 100 * YEAR_IN_MS;
+// Keep lifetime within PostgreSQL INTEGER seconds limits.
+const LIFETIME_IN_MS = 50 * YEAR_IN_MS;
 
 // Key duration configurations (in milliseconds)
 const KEY_DURATIONS = {
