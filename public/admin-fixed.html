@@ -280,16 +280,21 @@
                     <h2 class="text-xl font-semibold text-gray-800 mb-4">Generate New Key</h2>
                     <div class="flex flex-wrap gap-4 items-end">
                         <div class="flex-1 min-w-48">
-                            <label for="key-duration" class="block text-sm font-semibold text-gray-700 mb-2">Key Duration</label>
+                            <label for="key-plan" class="block text-sm font-semibold text-gray-700 mb-2">Plan</label>
+                            <select id="key-plan" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+                                <option value="premium">Premium</option>
+                                <option value="premium_plus">Premium Plus</option>
+                                <option value="pro">Pro</option>
+                            </select>
+                        </div>
+                        <div class="flex-1 min-w-48">
+                            <label for="key-duration" class="block text-sm font-semibold text-gray-700 mb-2">Duration</label>
                             <select id="key-duration"
                                     class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
                                 <option value="5min">5 Minutes</option>
-                                <option value="1day">1 Day</option>
                                 <option value="1week">1 Week</option>
                                 <option value="2weeks">2 Weeks</option>
                                 <option value="1month">1 Month</option>
-                                <option value="1year">1 Year</option>
-                                <option value="lifetime">Lifetime Access</option>
                             </select>
                         </div>
                         <button id="generate-key-btn" class="btn-modern btn-success">
@@ -314,8 +319,9 @@
                             <thead class="bg-gray-50">
                                 <tr>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Key</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Premium Duration</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Key Validity</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Redeemed By</th>
@@ -324,7 +330,7 @@
                             </thead>
                             <tbody id="keys-list" class="bg-white divide-y divide-gray-200">
                                 <tr>
-                                    <td colspan="7" class="px-6 py-8 text-center text-gray-500">
+                                    <td colspan="8" class="px-6 py-8 text-center text-gray-500">
                                         <div class="flex flex-col items-center">
                                             <div class="text-4xl mb-2">⏳</div>
                                             <p>Loading keys...</p>
@@ -425,6 +431,8 @@
             try {
                 const durationSelect = document.getElementById('key-duration');
                 const duration = durationSelect.value;
+                const planSelect = document.getElementById('key-plan');
+                const tier = planSelect.value;
                 console.log('🔑 Generating key for duration:', duration, 'minutes');
 
                 const response = await fetch(`${API_BASE}/admin/generate_key`, {
@@ -433,7 +441,7 @@
                         'Content-Type': 'application/json',
                     },
                     credentials: 'include', // Important for sessions
-                    body: JSON.stringify({ duration_type: duration })
+                    body: JSON.stringify({ duration_type: duration, tier })
                 });
 
                 const result = await response.json();
@@ -548,7 +556,7 @@
             if (!keys || keys.length === 0) {
                 keysList.innerHTML = `
                     <tr>
-                        <td colspan="7" class="px-6 py-8 text-center text-gray-500">
+                        <td colspan="8" class="px-6 py-8 text-center text-gray-500">
                             <div class="flex flex-col items-center">
                                 <div class="text-4xl mb-2">🔑</div>
                                 <p>No keys generated yet.</p>
@@ -612,6 +620,9 @@
                             📋
                         </button>
                     </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    ${key.tier === 'premium_plus' ? 'Premium Plus' : key.tier === 'pro' || key.tier === 'premium_pro' ? 'Pro' : 'Premium'}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                     <span class="status-badge status-${status}">
