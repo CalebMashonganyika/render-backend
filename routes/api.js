@@ -50,25 +50,24 @@ const KEY_DURATIONS = {
   '1year': { label: '1 Year', duration: YEAR_IN_MS },
   'lifetime': { label: 'Lifetime Access', duration: LIFETIME_IN_MS }
 };
+const ALLOWED_PLANS = new Set(['premium', 'premium_plus', 'pro']);
+
+function tierLabel(tier) {
+  return tier === 'premium_plus'
+    ? 'Premium Plus'
+    : tier === 'pro' || tier === 'premium_pro'
+      ? 'Pro'
+      : 'Premium';
+}
 
 // Generate random unlock key in NEW format: vsm-XXXXXXXX-XXXX
 // Duration is stored in database, NOT in the key format
 function generateUnlockKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  
-  // Generate exactly 8 alphanumeric characters for the first part
-  let firstPart = '';
-  for (let i = 0; i < 8; i++) {
-    firstPart += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  
-  // Generate exactly 4 alphanumeric characters for the suffix
-  let suffix = '';
-  for (let i = 0; i < 4; i++) {
-    suffix += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  
-  return `vsm-${firstPart}-${suffix}`;
+  const randomChars = (length) => Array.from(crypto.randomBytes(length), (byte) =>
+    chars[byte % chars.length]
+  ).join('');
+  return `vsm-${randomChars(8)}-${randomChars(4)}`;
 }
 
 // Generate WhatsApp-friendly key format
@@ -304,39 +303,38 @@ router.post('/verify_key', async (req, res) => {
 
      console.log('🔗 CONNECTING_TO_DATABASE...');
      const client = await pool.connect();
+     let transactionStarted = false;
 
      try {
        console.log('✅ DATABASE_CONNECTED');
+       await client.query('BEGIN');
+       transactionStarted = true;
 
-       // Check if key exists with new schema
+       // Lock the key row until redemption is committed so one key cannot be
+       // redeemed twice by concurrent requests.
        const query = `
-         SELECT id, unlock_key, key_expires_at, premium_duration_seconds, used, duration_type, redeemed_by FROM unlock_keys
+         SELECT id, unlock_key, key_expires_at, premium_duration_seconds, used, duration_type, redeemed_by, COALESCE(tier, 'premium') AS tier FROM unlock_keys
          WHERE unlock_key = $1
+         FOR UPDATE
        `;
        console.log('🔍 QUERYING_KEY:', query, [unlock_key]);
        
        const result = await client.query(query, [unlock_key]);
        console.log('📊 QUERY_RESULT:', result.rows);
 
-       // If key doesn't exist, create it automatically with the new schema
+       // Unknown keys must never be turned into valid subscriptions.
        let keyId;
        let keyData;
        let durationType; // Will be set from DB or default
-       
+        
        if (result.rows.length === 0) {
-         console.log('🔑 KEY_NOT_FOUND_CREATING_NEW...');
-         durationType = '5min'; // Default if key not found
-         const durationInfo = getDurationInfo(durationType);
-         const premiumDurationSeconds = Math.floor(durationInfo.duration / 1000);
-         const keyExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
-         
-         const insertResult = await client.query(
-           'INSERT INTO unlock_keys (unlock_key, expires_at, key_expires_at, premium_duration_seconds, used, duration_type, created_at, duration_minutes) VALUES ($1, $2, $3, $4, false, $5, NOW(), $6) RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, used, duration_type',
-           [unlock_key, keyExpiresAt, keyExpiresAt, premiumDurationSeconds, durationType, Math.floor(premiumDurationSeconds / 60)]
-         );
-         keyData = insertResult.rows[0];
-         keyId = keyData.id;
-         console.log('✅ NEW_KEY_CREATED_WITH_ID:', keyId, 'key_expires_at:', keyData.key_expires_at);
+         console.log('❌ KEY_NOT_FOUND');
+         await client.query('ROLLBACK');
+         transactionStarted = false;
+         return res.status(400).json({
+           success: false,
+           error: 'Invalid unlock key'
+         });
        } else {
          keyData = result.rows[0];
          keyId = keyData.id;
@@ -345,6 +343,8 @@ router.post('/verify_key', async (req, res) => {
         // Check if key is already used (one-time-use enforcement)
         if (keyData.used) {
           console.log('❌ KEY_ALREADY_USED');
+          await client.query('ROLLBACK');
+          transactionStarted = false;
           return res.status(400).json({
             success: false,
             error: 'Key has already been used'
@@ -356,6 +356,8 @@ router.post('/verify_key', async (req, res) => {
         const keyExpiresAt = new Date(keyData.key_expires_at);
         if (now > keyExpiresAt) {
           console.log('❌ KEY_EXPIRED at:', keyExpiresAt.toISOString(), 'now:', now.toISOString());
+          await client.query('ROLLBACK');
+          transactionStarted = false;
           return res.status(400).json({
             success: false,
             error: 'Key has expired (30-day validity period exceeded)'
@@ -398,8 +400,8 @@ router.post('/verify_key', async (req, res) => {
       console.log('💾 STORING_TOKEN_IN_DATABASE...');
       // CRITICAL FIX: Store timestamp directly without timezone conversion
       await client.query(
-        'INSERT INTO user_tokens (token, user_id, expires_at, duration_type) VALUES ($1, $2, $3, $4)',
-        [token, user_id, premiumExpiresAt.toISOString(), durationType]
+        'INSERT INTO user_tokens (token, user_id, expires_at, duration_type, tier) VALUES ($1, $2, $3, $4, $5)',
+        [token, user_id, premiumExpiresAt.toISOString(), durationType, keyData.tier || 'premium']
       );
       console.log('✅ TOKEN_STORED_SUCCESSFULLY');
       console.log('💾 STORED_ISO_EXPIRY:', premiumExpiresAt.toISOString());
@@ -448,21 +450,35 @@ router.post('/verify_key', async (req, res) => {
           console.log('🔧 RECALCULATED_EXPIRY: New expiry is', premiumExpiresAt.toISOString());
         }
       
+      // Keep the persisted token in lockstep with the resolved duration and
+      // expiry. A long timestamp alone must never be interpreted as lifetime.
+      await client.query(
+        'UPDATE user_tokens SET expires_at = $1, duration_type = $2 WHERE token = $3',
+        [premiumExpiresAt.toISOString(), durationType, token]
+      );
+      const entitlementKind = durationType === 'lifetime' ? 'lifetime' : 'timed';
+
       // Mark key as used and save redeemed_by (one-time-use enforcement) - MOVED HERE AFTER ALL OPERATIONS SUCCESSFULLY COMPLETED
       console.log('🔄 MARKING_KEY_AS_USED...');
       await client.query(
         'UPDATE unlock_keys SET used = true, redeemed_by = $1, redeemed_at = NOW() WHERE id = $2',
         [user_id, keyId]
       );
+      await client.query('COMMIT');
+      transactionStarted = false;
       console.log('✅ KEY_MARKED_AS_USED');
       
+      const resolvedTier = keyData.tier || 'premium';
       const response = {
         success: true,
-        message: 'Premium features unlocked!',
+        message: `${tierLabel(resolvedTier)} unlocked!`,
         token: token,
         premium_until: premiumExpiresAt.toISOString(), // Premium expires based on key duration
         premium_expires_at: premiumExpiresAt.toISOString(), // Same timestamp, explicit field name
         duration_type: durationType,
+        tier: resolvedTier,
+        entitlement_kind: entitlementKind,
+        lifetime_granted: entitlementKind === 'lifetime',
         premium_duration_seconds: keyData.premium_duration_seconds,
         premium_duration_minutes: Math.floor(keyData.premium_duration_seconds / 60)
       };
@@ -473,6 +489,14 @@ router.post('/verify_key', async (req, res) => {
       res.json(response);
 
     } catch (dbError) {
+      if (transactionStarted) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (rollbackError) {
+          console.error('❌ DATABASE_ROLLBACK_ERROR:', rollbackError);
+        }
+        transactionStarted = false;
+      }
       console.error('❌ DATABASE_ERROR:', dbError);
       console.error('❌ DATABASE_ERROR_STACK:', dbError.stack);
       console.error('❌ DATABASE_ERROR_CODE:', dbError.code);
@@ -545,7 +569,7 @@ router.post('/check_token', async (req, res) => {
     try {
       // Check if token exists and get its expiry
       const query = `
-        SELECT user_id, expires_at FROM user_tokens
+        SELECT user_id, expires_at, duration_type, COALESCE(tier, 'premium') AS tier FROM user_tokens
         WHERE token = $1
       `;
       const result = await client.query(query, [token]);
@@ -559,7 +583,7 @@ router.post('/check_token', async (req, res) => {
         });
       }
 
-      const { user_id, expires_at } = result.rows[0];
+      const { user_id, expires_at, duration_type, tier } = result.rows[0];
       const now = new Date();
       const expiresAt = new Date(expires_at);
 
@@ -570,6 +594,10 @@ router.post('/check_token', async (req, res) => {
       console.log('🔍 TOKEN_CHECK_RESULT:', {
         user_id,
         expires_at: expires_at.toISOString(),
+        duration_type,
+        tier,
+        entitlement_kind: duration_type === 'lifetime' ? 'lifetime' : 'timed',
+        lifetime_granted: duration_type === 'lifetime',
         now: now.toISOString(),
         remaining_time_ms: remainingTime,
         active: isActive
@@ -591,6 +619,8 @@ router.post('/check_token', async (req, res) => {
         active: true,
         user_id: user_id,
         expires_at: expires_at.toISOString(),
+        duration_type,
+        tier,
         remaining_time: remainingTime, // Time left in milliseconds
         remaining_minutes: Math.floor(remainingTime / (60 * 1000)),
         message: 'Premium subscription is active'
@@ -617,7 +647,7 @@ router.get('/keys', requireAdminAuth, async (req, res) => {
 
     try {
       const query = `
-        SELECT id, unlock_key, expires_at, key_expires_at, premium_duration_seconds, used, redeemed_by, duration_type, created_at, duration_minutes
+        SELECT id, unlock_key, expires_at, key_expires_at, premium_duration_seconds, used, redeemed_by, duration_type, COALESCE(tier, 'premium') AS tier, created_at, duration_minutes
         FROM unlock_keys
         ORDER BY created_at DESC
       `;
@@ -661,7 +691,7 @@ router.get('/keys', requireAdminAuth, async (req, res) => {
 // POST /api/generate_key (for admin dashboard - requires auth)
 router.post('/generate_key', requireAdminAuth, async (req, res) => {
   try {
-    const { duration_type = '5min' } = req.body;
+    const { duration_type = '5min', tier = 'premium' } = req.body;
     
     // Validate duration type
     if (!KEY_DURATIONS[duration_type]) {
@@ -669,6 +699,9 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
         success: false,
         message: 'Invalid duration type'
       });
+    }
+    if (!ALLOWED_PLANS.has(tier)) {
+      return res.status(400).json({ success: false, message: 'Invalid plan. Choose premium, premium_plus, or pro.' });
     }
 
     const client = await pool.connect();
@@ -682,8 +715,8 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
 
       // Store the key in database with duration_type
       const result = await client.query(
-        'INSERT INTO unlock_keys (unlock_key, key_expires_at, premium_duration_seconds, duration_type, used, created_at) VALUES ($1, $2, $3, $4, false, NOW()) RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, duration_type, used, created_at',
-        [unlockKey, keyExpiresAt, premiumDurationSeconds, duration_type]
+        'INSERT INTO unlock_keys (unlock_key, key_expires_at, premium_duration_seconds, duration_type, tier, used, created_at) VALUES ($1, $2, $3, $4, $5, false, NOW()) RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, duration_type, tier, used, created_at',
+        [unlockKey, keyExpiresAt, premiumDurationSeconds, duration_type, tier]
       );
 
       const keyData = result.rows[0];
@@ -697,6 +730,7 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
           id: keyData.id,
           unlock_key: keyData.unlock_key,
           duration_type: keyData.duration_type,
+          tier: keyData.tier,
           duration_label: durationInfo.label,
           premium_duration_seconds: keyData.premium_duration_seconds,
           key_expires_at: keyData.key_expires_at,
@@ -704,7 +738,7 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
           used: keyData.used,
           whatsapp_format: whatsappFormat
         },
-        message: `Key generated successfully for ${durationInfo.label}. Key expires in 30 days.`,
+        message: `Key generated successfully for ${tierLabel(tier)} (${durationInfo.label}). Key expires in 30 days.`,
         whatsapp_format: whatsappFormat
       });
 

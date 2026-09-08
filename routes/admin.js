@@ -177,7 +177,7 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
   let client;
 
   try {
-    const { duration_type = '5min' } = req.body;
+    const { duration_type = '1month', tier = 'premium' } = req.body;
     console.log('🔑 Generating new unlock key with duration:', duration_type);
     
     // Validate duration type
@@ -186,6 +186,9 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
         success: false,
         message: 'Invalid duration type. Must be one of: 5min, 1day, 1week, 2weeks, 1month, 1year, lifetime'
       });
+    }
+    if (!ALLOWED_PLANS.has(tier)) {
+      return res.status(400).json({ success: false, message: 'Invalid plan. Choose Premium, Premium Plus, or Pro.' });
     }
 
     client = await pool.connect();
@@ -223,9 +226,9 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
 
     // Insert new key with both old and new schema fields
     const insertQuery = `
-      INSERT INTO unlock_keys (unlock_key, expires_at, key_expires_at, premium_duration_seconds, used, duration_type, created_at, duration_minutes)
-      VALUES ($1, $2, $3, $4, false, $5, NOW(), $6)
-      RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, duration_type, created_at
+      INSERT INTO unlock_keys (unlock_key, expires_at, key_expires_at, premium_duration_seconds, used, duration_type, tier, created_at, duration_minutes)
+      VALUES ($1, $2, $3, $4, false, $5, $6, NOW(), $7)
+      RETURNING id, unlock_key, key_expires_at, premium_duration_seconds, duration_type, tier, created_at
     `;
     const result = await client.query(insertQuery, [
       key, 
@@ -233,6 +236,7 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
       keyExpiresAt,      // key_expires_at (new column)
       premiumDurationSeconds,
       duration_type,
+      tier,
       Math.floor(premiumDurationSeconds / 60)  // duration_minutes for backward compatibility
     ]);
 
@@ -250,6 +254,7 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
         id: keyData.id,
         unlock_key: keyData.unlock_key,
         duration_type: keyData.duration_type,
+        tier: keyData.tier,
         duration_label: durationInfo.label,
         premium_duration_seconds: premiumDurationSeconds,
         key_expires_at: keyData.key_expires_at,
@@ -257,7 +262,7 @@ router.post('/generate_key', requireAdminAuth, async (req, res) => {
         used: false,
         whatsapp_format: whatsappFormat
       },
-      message: `Key generated successfully for ${durationInfo.label}. Key expires in 30 days.`,
+      message: `Key generated successfully for ${tier === 'premium_plus' ? 'Premium Plus' : tier === 'pro' ? 'Pro' : 'Premium'} (${durationInfo.label}). Key expires in 30 days.`,
       whatsapp_format: whatsappFormat
     });
 
@@ -386,25 +391,16 @@ const KEY_DURATIONS = {
   '1year': { label: '1 Year', duration: YEAR_IN_MS },
   'lifetime': { label: 'Lifetime Access', duration: LIFETIME_IN_MS }
 };
+const ALLOWED_PLANS = new Set(['premium', 'premium_plus', 'pro']);
 
 // Generate random unlock key in NEW format (vsm-XXXXXXXX-XXXX)
 // Duration is stored in database, NOT in the key
 function generateUnlockKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  
-  // Generate exactly 8 alphanumeric characters for first part
-  let firstPart = '';
-  for (let i = 0; i < 8; i++) {
-    firstPart += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  
-  // Generate exactly 4 alphanumeric characters for suffix (NO duration info)
-  let suffix = '';
-  for (let i = 0; i < 4; i++) {
-    suffix += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  
-  return `vsm-${firstPart}-${suffix}`;
+  const randomChars = (length) => Array.from(crypto.randomBytes(length), (byte) =>
+    chars[byte % chars.length]
+  ).join('');
+  return `vsm-${randomChars(8)}-${randomChars(4)}`;
 }
 
 // Generate WhatsApp-friendly key format
